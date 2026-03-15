@@ -1,0 +1,22 @@
+# Env
+.env.local
+.env.*.local
+
+# Next.js
+app/.next/
+app/out/
+app/node_modules/
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+types/database.generated.ts
+
+# Claude Code local settings
+.claude/settings.local.json
