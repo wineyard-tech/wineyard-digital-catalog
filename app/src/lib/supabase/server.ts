@@ -1,1 +1,7 @@
-// TODO: Implement — see architecture docs §5 Data Architecture (server Supabase client with service role)
+import { createClient } from '@supabase/supabase-js'
+
+export function createServerClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  return createClient(url, key)
+}

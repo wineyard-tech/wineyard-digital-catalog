@@ -64,7 +64,8 @@ export async function zohoGet(
 
 /**
  * Iterates all pages of a Zoho list endpoint and returns combined results.
- * Zoho signals more pages via page_context.has_more_page.
+ * Use fetchAllZohoPages for small datasets (items, pricebooks).
+ * For large datasets (contacts, 7500+) prefer streamZohoPages to avoid timeouts.
  */
 export async function fetchAllZohoPages<T>(
   path: string,
@@ -87,4 +88,35 @@ export async function fetchAllZohoPages<T>(
   }
 
   return all
+}
+
+/**
+ * Async generator that yields one page (up to 200 rows) at a time.
+ * Use for large datasets to pipeline fetch+upsert instead of collect-then-process.
+ * Memory stays flat: only one page is held in memory at a time.
+ *
+ * Usage:
+ *   for await (const page of streamZohoPages(...)) {
+ *     await upsertBatch(page)
+ *   }
+ */
+export async function* streamZohoPages<T>(
+  path: string,
+  token: string,
+  orgId: string,
+  responseKey: string,
+  extraParams: Record<string, string | number> = {},
+  maxPages = 200
+): AsyncGenerator<{ rows: T[]; page: number; hasMore: boolean }> {
+  for (let page = 1; page <= maxPages; page++) {
+    const json = await zohoGet(path, token, orgId, { per_page: 200, page, ...extraParams })
+    if (json.code !== 0) throw new Error(`Zoho error on ${path} p${page}: ${json.message}`)
+
+    const rows: T[] = json[responseKey] ?? []
+    const hasMore = json.page_context?.has_more_page ?? false
+
+    yield { rows, page, hasMore }
+
+    if (!hasMore) break
+  }
 }

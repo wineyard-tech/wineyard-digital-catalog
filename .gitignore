@@ -22,3 +22,5 @@ types/database.generated.ts
 # Claude Code local settings
 .claude/settings.local.json
 node_modules/
+.worktrees/**/.env.local
+.claude/worktrees/**/.env.local

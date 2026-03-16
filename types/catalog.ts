@@ -8,6 +8,7 @@ export interface CatalogItem {
   category_name: string | null;
   base_rate: number;
   final_price: number;
+  price_type: 'custom' | 'base';
   available_stock: number;
   stock_status: 'available' | 'limited' | 'out_of_stock';
   image_url: string | null;
