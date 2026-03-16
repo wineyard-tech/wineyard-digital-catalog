@@ -110,6 +110,7 @@ export async function resolvePrice(
         stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
       image_url: imageUrl,
       tax_percentage: 18,
+      price_type: customRate != null ? 'custom' : 'base',
     }
   })
 
