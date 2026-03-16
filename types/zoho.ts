@@ -1,14 +1,35 @@
-// Minimal TypeScript interfaces for Zoho Books API responses
+// TypeScript interfaces for Zoho Books API responses
 
 export interface ZohoItem {
   item_id: string;
   name: string;
   sku: string;
   brand: string;
+  manufacturer_name?: string;
+  category_id?: string;
   category_name: string;
-  rate: number;
-  available_stock: number;
+  description?: string;
+  hsn_or_sac?: string;
+  unit?: string;
+  item_type?: string;
+  product_type?: string;
+  rate: number;                 // default selling price — used as base_rate
+  purchase_rate?: number;
+  is_taxable?: boolean;
+  tax_id?: string;
+  tax_name?: string;
+  tax_percentage?: number;
+  track_inventory?: boolean;
+  available_stock: number;      // -1 means tracking disabled; catalog ignores this in Phase 1
+  actual_available_stock?: number;
+  reorder_level?: number;
+  upc?: string;
+  ean?: string;
+  part_number?: string;
   status: string;
+  custom_fields?: Record<string, unknown>;
+  created_time?: string;
+  last_modified_time?: string;
   image_documents: Array<{
     image_id: string;
     image_name: string;
@@ -16,15 +37,45 @@ export interface ZohoItem {
   }>;
 }
 
+export interface ZohoContactPerson {
+  contact_person_id: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
+  mobile?: string;
+  is_primary_contact?: boolean;
+  communication_preference?: Record<string, unknown>;
+}
+
 export interface ZohoContact {
   contact_id: string;
   contact_name: string;
-  phone: string;
-  billing_address: {
-    phone: string;
-  };
-  pricebook_id: string;
+  company_name?: string;
+  contact_type?: string;
   status: string;
+  phone?: string;
+  mobile?: string;
+  email?: string;
+  pricebook_id?: string;
+  primary_contact_person_id?: string;
+  payment_terms?: number;
+  payment_terms_label?: string;
+  currency_id?: string;
+  currency_code?: string;
+  billing_address?: {
+    phone?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  };
+  shipping_address?: Record<string, unknown>;
+  custom_fields?: Record<string, unknown>;
+  contact_persons?: ZohoContactPerson[];
+  created_time?: string;
+  last_modified_time?: string;
 }
 
 export interface ZohoPricebook {

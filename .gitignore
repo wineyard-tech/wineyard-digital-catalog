@@ -10,6 +10,7 @@ app/node_modules/
 # Supabase
 supabase/.branches/
 supabase/.temp/
+supabase/functions/.env
 
 # OS
 .DS_Store
@@ -20,3 +21,4 @@ types/database.generated.ts
 
 # Claude Code local settings
 .claude/settings.local.json
+node_modules/
