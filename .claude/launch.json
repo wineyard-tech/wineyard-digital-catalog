@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Next.js Dev Server",
+      "name": "WineYard Worktree Dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "app", "run", "dev"],
-      "port": 3000
+      "runtimeArgs": ["--prefix", "app", "run", "dev", "--", "--port", "3001"],
+      "port": 3001
     }
   ]
 }
