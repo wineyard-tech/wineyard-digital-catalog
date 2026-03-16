@@ -14,10 +14,12 @@ fi
 echo "Generating Supabase TypeScript types..."
 
 if [[ "$SUPABASE_URL" == *".supabase.co"* ]]; then
+  # Remote project — extract project ref from URL (https://<ref>.supabase.co)
   PROJECT_ID=$(echo "$SUPABASE_URL" | sed 's|https://||' | cut -d'.' -f1)
   echo "  → Remote project: ${PROJECT_ID}"
   npx supabase gen types typescript --project-id "$PROJECT_ID" > types/database.generated.ts
 else
+  # Local Supabase
   echo "  → Local Supabase"
   npx supabase gen types typescript --local > types/database.generated.ts
 fi
