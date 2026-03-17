@@ -1,6 +1,6 @@
 import { createServiceClient } from './supabase/server'
-import type { ZohoContact, ZohoEstimateResponse } from '../../../types/zoho'
-import type { CartItem } from '../../../types/catalog'
+import type { ZohoContact, ZohoEstimateResponse } from '@/types/zoho'
+import type { CartItem } from '@/types/catalog'
 
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'

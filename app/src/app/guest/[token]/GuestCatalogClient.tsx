@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { CatalogItem } from '../../../../../types/catalog'
+import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../../components/catalog/SearchBar'
 import CategoryFilter from '../../../components/catalog/CategoryFilter'
 import BrandFilter from '../../../components/catalog/BrandFilter'

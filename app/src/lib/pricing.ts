@@ -1,5 +1,5 @@
 import { createServiceClient } from './supabase/server'
-import type { CatalogItem } from '../../../types/catalog'
+import type { CatalogItem } from '@/types/catalog'
 
 export interface CatalogFilters {
   category?: string

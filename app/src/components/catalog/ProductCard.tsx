@@ -4,7 +4,7 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Minus, Bell } from 'lucide-react'
-import type { CatalogItem } from '../../../../types/catalog'
+import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 
 interface ProductCardProps {

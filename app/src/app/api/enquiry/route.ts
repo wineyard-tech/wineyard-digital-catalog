@@ -4,7 +4,7 @@ import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { createEstimate } from '@/lib/zoho'
 import { sendQuotation } from '@/lib/whatsapp'
-import type { EnquiryRequest, CartItem } from '../../../../../types/catalog'
+import type { EnquiryRequest, CartItem } from '@/types/catalog'
 
 export async function POST(request: NextRequest) {
   // ── Auth — guests cannot enquire ─────────────────────────────────────────

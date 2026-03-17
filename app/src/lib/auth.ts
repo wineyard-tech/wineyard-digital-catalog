@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 import { createServiceClient } from './supabase/server'
-import type { SessionPayload, GuestPayload } from '../../../types/catalog'
+import type { SessionPayload, GuestPayload } from '@/types/catalog'
 
 export class AuthError extends Error {
   constructor(public readonly status: number, message: string) {

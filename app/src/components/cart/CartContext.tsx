@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useReducer, ReactNode } from 'react'
-import type { CartItem } from '../../../../types/catalog'
+import type { CartItem } from '@/types/catalog'
 
 const STORAGE_KEY = 'wineyard_cart'
 

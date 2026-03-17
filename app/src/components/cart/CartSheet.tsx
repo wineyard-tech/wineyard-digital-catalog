@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Minus, Plus, Trash2, MessageCircle, X } from 'lucide-react'
 import { useCart } from './CartContext'
-import type { EnquiryResponse } from '../../../../types/catalog'
+import type { EnquiryResponse } from '@/types/catalog'
 
 interface CartSheetProps {
   open: boolean
