@@ -2,7 +2,8 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
-import { Plus, Minus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Plus, Minus, Bell } from 'lucide-react'
 import type { CatalogItem } from '../../../../types/catalog'
 import { useCart } from '../cart/CartContext'
 
@@ -11,26 +12,27 @@ interface ProductCardProps {
   guestMode?: boolean
 }
 
-const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120" viewBox="0 0 200 120"><rect width="200" height="120" fill="#F3F4F6"/><text x="100" y="55" text-anchor="middle" fill="#9CA3AF" font-size="36">📷</text><text x="100" y="80" text-anchor="middle" fill="#D1D5DB" font-size="11">No image</text></svg>`)}`
+const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140" viewBox="0 0 200 140"><rect width="200" height="140" fill="#F3F4F6"/><text x="100" y="65" text-anchor="middle" fill="#9CA3AF" font-size="36">📷</text><text x="100" y="88" text-anchor="middle" fill="#D1D5DB" font-size="11">No image</text></svg>`
+)}`
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
-const BADGE_CONFIG = {
-  available:    { label: 'Available',     bg: '#059669' },
-  limited:      { label: 'Limited Stock', bg: '#B45309' },
-  out_of_stock: { label: 'Out of Stock',  bg: '#64748B' },
-}
-
 export default function ProductCard({ item, guestMode = false }: ProductCardProps) {
   const { items, addItem, updateQty } = useCart()
   const [imgError, setImgError] = useState(false)
+  const router = useRouter()
 
   const cartEntry = items.find((i) => i.zoho_item_id === item.zoho_item_id)
   const qty = cartEntry?.quantity ?? 0
+  const isOOS = item.stock_status === 'out_of_stock'
+  const imgSrc = !imgError && item.image_url ? item.image_url : PLACEHOLDER
+  const hasDiscount = item.price_type === 'custom' && item.base_rate > item.final_price
 
-  function handleAdd() {
+  function handleAdd(e: React.MouseEvent) {
+    e.stopPropagation()
     if (guestMode || isOOS) return
     addItem({
       zoho_item_id: item.zoho_item_id,
@@ -44,12 +46,29 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
     })
   }
 
-  const isOOS = item.stock_status === 'out_of_stock'
-  const imgSrc = !imgError && item.image_url ? item.image_url : PLACEHOLDER
-  const badge = BADGE_CONFIG[item.stock_status]
+  function handleNotify(e: React.MouseEvent) {
+    e.stopPropagation()
+    alert(`We'll notify you when ${item.item_name} is back in stock!`)
+  }
+
+  function handleQtyChange(e: React.MouseEvent, newQty: number) {
+    e.stopPropagation()
+    updateQty(item.zoho_item_id, newQty)
+  }
+
+  function handleCardClick() {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(`catalog_product_${item.zoho_item_id}`, JSON.stringify(item))
+    }
+    router.push(`/product/${item.zoho_item_id}`)
+  }
 
   return (
     <div
+      onClick={handleCardClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && handleCardClick()}
       style={{
         background: '#FFFFFF',
         borderRadius: 8,
@@ -57,151 +76,116 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        cursor: 'pointer',
       }}
     >
-      {/* Product image with overlaid badge + cart controls */}
-      <div style={{ position: 'relative', height: 120, background: '#F9FAFB' }}>
+      {/* Thumbnail — full fill, no padding */}
+      <div style={{ position: 'relative', height: 130, background: '#F9FAFB' }}>
         <Image
           src={imgSrc}
           alt={item.item_name}
           fill
-          style={{ objectFit: 'contain', padding: 8 }}
+          style={{ objectFit: 'cover' }}
           onError={() => setImgError(true)}
           sizes="(max-width: 640px) 50vw, 33vw"
           unoptimized={!item.image_url || imgError}
         />
 
-        {/* Stock badge — top-left, rounded-b-md (bottom corners only) */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            background: badge.bg,
-            color: '#FFFFFF',
-            fontSize: 10,
-            fontWeight: 600,
-            padding: '3px 8px',
-            borderRadius: '0 0 6px 0',
-            letterSpacing: '0.02em',
-          }}
-        >
-          {badge.label}
-        </div>
+        {/* OOS-only banner — full-width, centered, at top */}
+        {isOOS && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              background: '#64748B',
+              color: '#FFFFFF',
+              fontSize: 11,
+              fontWeight: 600,
+              padding: '4px 0',
+              textAlign: 'center',
+              borderRadius: '0 0 6px 6px',
+              letterSpacing: '0.03em',
+            }}
+          >
+            Out of Stock
+          </div>
+        )}
 
         {/* Cart controls — bottom-right inside image */}
         {!guestMode && (
-          qty === 0 ? (
-            <button
-              onClick={handleAdd}
-              disabled={isOOS}
-              aria-label="Add to cart"
-              style={{
-                position: 'absolute',
-                bottom: 8,
-                right: 8,
-                width: 32,
-                height: 32,
-                border: `2px solid ${isOOS ? '#9CA3AF' : '#059669'}`,
-                borderRadius: 6,
-                background: 'transparent',
-                cursor: isOOS ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity: isOOS ? 0.5 : 1,
-              }}
-            >
-              <Plus size={16} color={isOOS ? '#9CA3AF' : '#059669'} />
-            </button>
-          ) : (
-            <div
-              style={{
-                position: 'absolute',
-                bottom: 8,
-                right: 8,
-                display: 'flex',
-                alignItems: 'center',
-                background: '#059669',
-                borderRadius: 6,
-                overflow: 'hidden',
-              }}
-            >
+          <>
+            {isOOS ? (
               <button
-                onClick={() => updateQty(item.zoho_item_id, qty - 1)}
-                aria-label="Decrease quantity"
+                onClick={handleNotify}
+                aria-label="Notify when available"
                 style={{
-                  width: 28,
-                  height: 28,
-                  background: 'none',
-                  border: 'none',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  position: 'absolute', bottom: 8, right: 8,
+                  width: 32, height: 32,
+                  border: '2px solid #B45309', borderRadius: 6,
+                  background: 'transparent', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <Minus size={14} />
+                <Bell size={15} color="#B45309" />
               </button>
-              <span
-                style={{
-                  color: '#FFFFFF',
-                  fontWeight: 700,
-                  fontSize: 13,
-                  minWidth: 18,
-                  textAlign: 'center',
-                }}
-              >
-                {qty}
-              </span>
+            ) : qty === 0 ? (
               <button
-                onClick={() => updateQty(item.zoho_item_id, qty + 1)}
-                aria-label="Increase quantity"
+                onClick={handleAdd}
+                aria-label="Add to cart"
                 style={{
-                  width: 28,
-                  height: 28,
-                  background: 'none',
-                  border: 'none',
-                  color: '#FFFFFF',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  position: 'absolute', bottom: 8, right: 8,
+                  width: 32, height: 32,
+                  border: '2px solid #059669', borderRadius: 6,
+                  background: 'transparent', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}
               >
-                <Plus size={14} />
+                <Plus size={16} color="#059669" />
               </button>
-            </div>
-          )
+            ) : (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute', bottom: 8, right: 8,
+                  display: 'flex', alignItems: 'center',
+                  background: '#059669', borderRadius: 6, overflow: 'hidden',
+                }}
+              >
+                <button onClick={(e) => handleQtyChange(e, qty - 1)} aria-label="Decrease quantity"
+                  style={{ width: 28, height: 28, background: 'none', border: 'none', color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Minus size={14} />
+                </button>
+                <span style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 13, minWidth: 18, textAlign: 'center' }}>{qty}</span>
+                <button onClick={(e) => handleQtyChange(e, qty + 1)} aria-label="Increase quantity"
+                  style={{ width: 28, height: 28, background: 'none', border: 'none', color: '#FFFFFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Plus size={14} />
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Card content */}
-      <div style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', flex: 1 }}>
-        <p
-          style={{
-            margin: '0 0 2px',
-            fontSize: 14,
-            fontWeight: 500,
-            color: '#1A1A2E',
-            lineHeight: 1.35,
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
+      <div style={{ padding: '8px 10px 10px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <p style={{
+          margin: '0 0 2px', fontSize: 14, fontWeight: 500, color: '#1A1A2E',
+          lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical', overflow: 'hidden',
+        }}>
           {item.item_name}
         </p>
-        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9CA3AF' }}>{item.sku}</p>
-
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0066CC' }}>{fmt(item.final_price)}</span>
-          {item.price_type === 'custom' && item.base_rate !== item.final_price && (
-            <span style={{ fontSize: 12, color: '#9CA3AF', textDecoration: 'line-through' }}>
-              {fmt(item.base_rate)}
-            </span>
+        {item.brand && (
+          <p style={{ margin: '0 0 4px', fontSize: 12, color: '#9CA3AF', lineHeight: 1.2 }}>
+            {item.brand}
+          </p>
+        )}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>{fmt(item.final_price)}</span>
+          {hasDiscount && (
+            <span style={{ fontSize: 12, color: '#9CA3AF', textDecoration: 'line-through' }}>{fmt(item.base_rate)}</span>
           )}
         </div>
       </div>
