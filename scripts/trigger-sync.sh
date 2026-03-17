@@ -1,44 +1,58 @@
 #!/usr/bin/env bash
-# trigger-sync.sh — Manually trigger Edge Functions against local Supabase for dev testing
+# trigger-sync.sh — Manually trigger Edge Functions (local or remote Supabase)
 #
 # Usage:
-#   ./scripts/trigger-sync.sh              # trigger sync-items (default)
-#   ./scripts/trigger-sync.sh contacts     # trigger sync-contacts
-#   ./scripts/trigger-sync.sh cleanup      # trigger session-cleanup
+#   ./scripts/trigger-sync.sh                      # sync-items → local
+#   ./scripts/trigger-sync.sh contacts             # sync-contacts → local
+#   ./scripts/trigger-sync.sh cleanup              # session-cleanup → local
+#   ./scripts/trigger-sync.sh items remote         # sync-items → remote staging
+#   ./scripts/trigger-sync.sh contacts remote      # sync-contacts → remote (no test_limit)
 #
-# Requires:
-#   - Local Supabase running:    npx supabase start
-#   - Edge Functions serving:    npx supabase functions serve --no-verify-jwt
-#     (--no-verify-jwt is required — local JWT auth is not needed for dev)
-#   - jq installed for pretty output (optional but recommended)
+# Local requires:
+#   - npx supabase functions serve --no-verify-jwt (separate terminal)
+#
+# Remote requires:
+#   - npx supabase functions deploy <fn> --no-verify-jwt (done once)
+#   - SUPABASE_SERVICE_ROLE_KEY set (auto-read from app/.env.local)
 
 set -euo pipefail
 
-SUPABASE_URL="${SUPABASE_URL:-http://localhost:54321}"
-FUNCTIONS_PORT="${FUNCTIONS_PORT:-54321}"
-FUNCTION_HOST="http://localhost:54321"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="${REPO_ROOT}/app/.env.local"
+
+# ── Target: local or remote ───────────────────────────────────────────────────
+TARGET="${2:-local}"
+
+if [ "$TARGET" = "remote" ]; then
+  # Read the remote project URL from .env.local
+  REMOTE_URL=$(grep '^NEXT_PUBLIC_SUPABASE_URL=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
+  if [ -z "$REMOTE_URL" ]; then
+    echo "Error: NEXT_PUBLIC_SUPABASE_URL not found in app/.env.local"
+    exit 1
+  fi
+  FUNCTION_HOST="${REMOTE_URL}"
+  echo "→ Target: REMOTE (${REMOTE_URL})"
+else
+  FUNCTION_HOST="http://localhost:54321"
+  echo "→ Target: LOCAL (${FUNCTION_HOST})"
+fi
 
 # ── Resolve service role key ──────────────────────────────────────────────────
 if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-  # Try to read from app/.env.local
-  ENV_FILE="$(dirname "$0")/../app/.env.local"
   if [ -f "$ENV_FILE" ]; then
     SUPABASE_SERVICE_ROLE_KEY=$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')
   fi
 fi
 
-if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-  # Read the JWT service role key from `supabase status --output env`
-  # (the sb_secret_* key shown in normal status is NOT a JWT and won't work as Bearer token)
-  REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ] && [ "$TARGET" != "remote" ]; then
+  # Local fallback: pull JWT key from supabase status
   SUPABASE_SERVICE_ROLE_KEY=$(cd "$REPO_ROOT" && npx supabase status --output env 2>/dev/null \
     | grep '^SERVICE_ROLE_KEY=' | cut -d= -f2- | tr -d '"')
 fi
 
 if [ -z "${SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
   echo "Error: Could not resolve SUPABASE_SERVICE_ROLE_KEY."
-  echo "Run: npx supabase status — and set the 'Secret' key as:"
-  echo "  export SUPABASE_SERVICE_ROLE_KEY=<sb_secret_...>"
+  echo "Ensure app/.env.local has SUPABASE_SERVICE_ROLE_KEY=<jwt>"
   exit 1
 fi
 
@@ -53,7 +67,12 @@ case "$FUNCTION" in
     ;;
   contacts|sync-contacts)
     ENDPOINT="sync-contacts"
-    BODY='{"test_limit":50}'   # cap to 50 contacts for local dev
+    # Only apply test_limit for local runs to avoid capping real data on remote
+    if [ "$TARGET" = "remote" ]; then
+      BODY='{}'
+    else
+      BODY='{"test_limit":50}'
+    fi
     ;;
   cleanup|session-cleanup)
     ENDPOINT="session-cleanup"
@@ -61,7 +80,7 @@ case "$FUNCTION" in
     ;;
   *)
     echo "Unknown function: $FUNCTION"
-    echo "Usage: $0 [items|contacts|cleanup]"
+    echo "Usage: $0 [items|contacts|cleanup] [local|remote]"
     exit 1
     ;;
 esac

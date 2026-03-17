@@ -1,75 +1,104 @@
 'use client'
 
-import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useCart } from './CartContext'
-import CartSheet from './CartSheet'
 
-function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
-}
+const THUMB_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><rect width="28" height="28" fill="#D1FAE5"/><text x="14" y="19" text-anchor="middle" fill="#059669" font-size="14">📦</text></svg>`
+)}`
 
-export default function CartBar() {
-  const { itemCount, subtotal } = useCart()
-  const [open, setOpen] = useState(false)
+interface CartBarProps { bottom?: number }
+
+export default function CartBar({ bottom = 76 }: CartBarProps) {
+  const { items, itemCount } = useCart()
+  const router = useRouter()
 
   if (itemCount === 0) return null
 
+  const thumbnails = items.slice(0, 3)
+
   return (
-    <>
-      <div
+    <div
+      style={{
+        position: 'fixed',
+        bottom,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 39,
+        minWidth: 200,
+      }}
+    >
+      <button
+        onClick={() => router.push('/cart')}
+        aria-label="View cart"
         style={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          background: '#0066CC',
-          padding: '12px 16px',
+          background: '#059669',
+          border: 'none',
+          borderRadius: 999,
+          padding: '10px 20px',
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          zIndex: 40,
-          boxShadow: '0 -2px 16px rgba(0,102,204,0.25)',
+          gap: 10,
+          cursor: 'pointer',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+          width: '100%',
+          justifyContent: 'center',
+          whiteSpace: 'nowrap',
         }}
       >
-        <div style={{ color: '#FFFFFF' }}>
-          <span
-            style={{
-              background: '#FFFFFF',
-              color: '#0066CC',
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '2px 8px',
-              marginRight: 8,
-            }}
-          >
-            {itemCount}
-          </span>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>item{itemCount !== 1 ? 's' : ''} in cart</span>
-        </div>
-        <button
-          onClick={() => setOpen(true)}
-          style={{
-            background: '#FFFFFF',
-            color: '#0066CC',
-            border: 'none',
-            borderRadius: 8,
-            padding: '8px 16px',
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-          aria-label="View cart"
-        >
-          {fmt(subtotal)}
-          <span style={{ fontSize: 16 }}>›</span>
-        </button>
-      </div>
+        {/* Overlapping product thumbnails */}
+        {thumbnails.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {thumbnails.map((item, idx) => (
+              <div
+                key={item.zoho_item_id}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  border: '2px solid #047857',
+                  background: '#F0FDF4',
+                  overflow: 'hidden',
+                  marginLeft: idx === 0 ? 0 : -10,
+                  position: 'relative',
+                  zIndex: thumbnails.length - idx,
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                {item.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={item.image_url}
+                    alt={item.item_name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={THUMB_PLACEHOLDER} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
-      <CartSheet open={open} onClose={() => setOpen(false)} />
-    </>
+        <span style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 700 }}>View Cart</span>
+
+        <span
+          style={{
+            background: 'rgba(255,255,255,0.25)',
+            color: '#FFFFFF',
+            borderRadius: 999,
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '2px 8px',
+          }}
+        >
+          {itemCount}
+        </span>
+      </button>
+    </div>
   )
 }

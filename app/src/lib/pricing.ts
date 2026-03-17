@@ -24,7 +24,7 @@ export async function resolvePrice(
 ): Promise<{ items: CatalogItem[]; total: number }> {
   const supabase = createServiceClient()
   const page = filters.page ?? 1
-  const pageSize = 20
+  const pageSize = 30
 
   // ── Step 1: Query items with filters ──────────────────────────────────────
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,6 +110,7 @@ export async function resolvePrice(
         stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
       image_url: imageUrl,
       tax_percentage: 18,
+      price_type: customRate != null ? 'custom' : 'base',
     }
   })
 

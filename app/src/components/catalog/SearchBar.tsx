@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { Search } from 'lucide-react'
 
 interface SearchBarProps {
   onSearch: (query: string) => void
@@ -22,26 +23,21 @@ export default function SearchBar({ onSearch, placeholder = 'Search products, SK
   }, [value, onSearch])
 
   return (
-    <div style={{ position: 'relative', padding: '0 16px 8px' }}>
+    <div style={{ position: 'relative', padding: '0 12px 10px' }}>
       {/* Search icon */}
-      <svg
+      <span
         style={{
           position: 'absolute',
-          left: 28,
+          left: 24,
           top: '50%',
           transform: 'translateY(-60%)',
-          width: 16,
-          height: 16,
-          color: '#6B7280',
           pointerEvents: 'none',
+          display: 'flex',
+          alignItems: 'center',
         }}
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={2}
       >
-        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-      </svg>
+        <Search size={16} color="#6B7280" />
+      </span>
       <input
         type="search"
         value={value}
@@ -49,14 +45,14 @@ export default function SearchBar({ onSearch, placeholder = 'Search products, SK
         placeholder={placeholder}
         style={{
           width: '100%',
-          background: '#FFFFFF',
-          border: '1px solid #E5E7EB',
+          boxSizing: 'border-box' as const,
+          background: '#F3F4F6',
+          border: 'none',
           borderRadius: 10,
           padding: '10px 12px 10px 36px',
           fontSize: 14,
           color: '#1A1A2E',
           outline: 'none',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
         }}
         aria-label="Search products"
       />
