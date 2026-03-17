@@ -71,11 +71,13 @@ export default function CartPage() {
     <div style={{ maxWidth: 768, margin: '0 auto', minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: '#F8FAFB' }}>
 
       {/* Sticky header */}
-      <header style={{ position: 'sticky', top: 0, background: '#FFFFFF', borderBottom: '1px solid #F3F4F6', zIndex: 20, display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 12 }}>
-        <button onClick={() => router.back()} aria-label="Go back" style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4 }}>
+      <header style={{ position: 'sticky', top: 0, background: '#FFFFFF', borderBottom: '1px solid #F3F4F6', zIndex: 20, display: 'flex', alignItems: 'center', padding: '14px 16px' }}>
+        <button onClick={() => router.back()} aria-label="Go back" style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 4, width: 32 }}>
           <ArrowLeft size={22} color="#1A1A2E" />
         </button>
-        <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1A1A2E', flex: 1 }}>Cart</h1>
+        <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1A1A2E', flex: 1, textAlign: 'center' }}>Cart</h1>
+        {/* Spacer to balance back button and keep title centered */}
+        <div style={{ width: 32 }} aria-hidden="true" />
       </header>
 
       {/* Scrollable content */}

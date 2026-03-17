@@ -109,39 +109,40 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  WITH matched AS (
-    SELECT i.brand, i.category_name
-    FROM items i
-    WHERE
-      i.status = 'active'
-      AND (ts_query IS NULL OR i.search_vector @@ ts_query)
-  )
-  -- Brand facets (category columns are NULL)
-  SELECT
-    m.brand            AS brand,
-    COUNT(*)           AS brand_count,
-    NULL::TEXT         AS category,
-    NULL::BIGINT       AS category_count
-  FROM matched m
-  WHERE m.brand IS NOT NULL AND m.brand <> ''
-  GROUP BY m.brand
+  SELECT f.brand, f.brand_count, f.category, f.category_count
+  FROM (
+    WITH matched AS (
+      SELECT i.brand, i.category_name
+      FROM items i
+      WHERE
+        i.status = 'active'
+        AND (ts_query IS NULL OR i.search_vector @@ ts_query)
+    )
+    -- Brand facets (category columns are NULL)
+    SELECT
+      m.brand            AS brand,
+      COUNT(*)           AS brand_count,
+      NULL::TEXT         AS category,
+      NULL::BIGINT       AS category_count
+    FROM matched m
+    WHERE m.brand IS NOT NULL AND m.brand <> ''
+    GROUP BY m.brand
 
-  UNION ALL
+    UNION ALL
 
-  -- Category facets (brand columns are NULL)
-  SELECT
-    NULL::TEXT         AS brand,
-    NULL::BIGINT       AS brand_count,
-    m.category_name    AS category,
-    COUNT(*)           AS category_count
-  FROM matched m
-  WHERE m.category_name IS NOT NULL AND m.category_name <> ''
-  GROUP BY m.category_name
-
+    -- Category facets (brand columns are NULL)
+    SELECT
+      NULL::TEXT         AS brand,
+      NULL::BIGINT       AS brand_count,
+      m.category_name    AS category,
+      COUNT(*)           AS category_count
+    FROM matched m
+    WHERE m.category_name IS NOT NULL AND m.category_name <> ''
+    GROUP BY m.category_name
+  ) AS f
   ORDER BY
-    -- brands first sorted by count, then categories by count
-    CASE WHEN brand IS NOT NULL THEN 0 ELSE 1 END,
-    COALESCE(brand_count, category_count) DESC;
+    CASE WHEN f.brand IS NOT NULL THEN 0 ELSE 1 END,
+    COALESCE(f.brand_count, f.category_count) DESC;
 
 END;
 $$ LANGUAGE plpgsql STABLE;
