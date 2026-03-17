@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { NextConfig } from 'next'
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const withPWA = require('next-pwa')({
@@ -59,6 +60,23 @@ const withPWA = require('next-pwa')({
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  webpack: (config, { dir }) => {
+    // `next-pwa` runs a webpack pass even in dev for service-worker pre-caching.
+    // When the dev server is started via `npm --prefix app`, process.cwd() stays
+    // at the repo root, so webpack resolves modules from there — where tailwindcss
+    // doesn't exist.  Explicitly prepend the project's own node_modules so
+    // resolution always starts in the right place.
+    config.resolve = {
+      ...config.resolve,
+      modules: [
+        path.resolve(dir, 'node_modules'),
+        ...(Array.isArray(config.resolve?.modules)
+          ? config.resolve.modules
+          : ['node_modules']),
+      ],
+    }
+    return config
+  },
   images: {
     remotePatterns: [
       {
