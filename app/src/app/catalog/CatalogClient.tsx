@@ -10,8 +10,7 @@ import CartBar from '../../components/cart/CartBar'
 import OfflineBanner from '../../components/shared/OfflineBanner'
 
 interface CatalogClientProps {
-  sessionToken: string
-  contactName: string
+  contactName: string | null
   initialItems: CatalogItem[]
   initialCategories: string[]
   initialBrands: string[]
@@ -90,26 +89,38 @@ export default function CatalogClient({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
           <div>
             <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#FFFFFF' }}>WineYard Catalog</h1>
-            {contactName && (
+            {contactName ? (
               <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.75)' }}>Hi, {contactName}</p>
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: 'rgba(255,255,255,0.75)' }}>
+                Showing base prices &mdash;{' '}
+                <a
+                  href="/auth/login"
+                  style={{ color: '#FFFFFF', fontWeight: 600, textDecoration: 'underline' }}
+                >
+                  Login for your custom pricing
+                </a>
+              </p>
             )}
           </div>
-          <form action="/api/auth/logout" method="POST">
-            <button
-              type="submit"
-              style={{
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: 8,
-                color: '#FFFFFF',
-                fontSize: 12,
-                padding: '6px 12px',
-                cursor: 'pointer',
-              }}
-            >
-              Logout
-            </button>
-          </form>
+          {contactName && (
+            <form action="/api/auth/logout" method="POST">
+              <button
+                type="submit"
+                style={{
+                  background: 'rgba(255,255,255,0.15)',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#FFFFFF',
+                  fontSize: 12,
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                }}
+              >
+                Logout
+              </button>
+            </form>
+          )}
         </div>
         <div style={{ background: '#FFFFFF', borderRadius: 10, overflow: 'hidden' }}>
           <SearchBar onSearch={setSearch} />
