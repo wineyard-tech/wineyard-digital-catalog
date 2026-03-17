@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
 
   // ── Resolve items with pricing ────────────────────────────────────────────
   const { items, total } = await resolvePrice(zohoContactId, filters)
-  const pageSize = 20
+  const pageSize = 30
 
   return NextResponse.json({
     items,
