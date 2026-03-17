@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Search, Share2, Plus, Minus, ShoppingCart } from 'lucide-react'
+import { ArrowLeft, Search, Share2, Plus, Minus } from 'lucide-react'
 import type { CatalogItem } from '../../../../types/catalog'
 import { useCart } from '../cart/CartContext'
+import CartBar from '../cart/CartBar'
 
 interface Props { id: string }
 
@@ -261,6 +262,9 @@ export default function ProductDetailClient({ id }: Props) {
         )}
       </div>
 
+      {/* Floating CartBar — shows above bottom bar when cart has items */}
+      <CartBar bottom={88} />
+
       {/* Sticky bottom bar */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, maxWidth: 768, margin: '0 auto', background: '#FFFFFF', borderTop: '1px solid #E5E7EB', padding: '12px 16px 24px', zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Price in footer */}
@@ -271,43 +275,31 @@ export default function ProductDetailClient({ id }: Props) {
               <span style={{ fontSize: 12, color: '#9CA3AF', textDecoration: 'line-through' }}>{fmt(item.base_rate)}</span>
             )}
           </div>
-          <p style={{ margin: 0, fontSize: 11, color: '#6B7280' }}>incl. {item.tax_percentage}% GST</p>
         </div>
 
-        {/* Add / Qty CTA */}
+        {/* Add / Qty CTA — compact fixed width */}
         {isOOS ? (
-          <button disabled style={{ flex: 1, background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700 }}>
+          <button disabled style={{ width: 130, background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700 }}>
             Out of Stock
           </button>
         ) : qty === 0 ? (
           <button
             onClick={handleAdd}
-            style={{ flex: 1, background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '13px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            style={{ width: 130, background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
           >
-            <Plus size={16} />
+            <Plus size={15} />
             Add
           </button>
         ) : (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#059669', borderRadius: 10, padding: '8px 16px' }}>
+          <div style={{ width: 130, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#059669', borderRadius: 10, padding: '8px 14px' }}>
             <button onClick={() => updateQty(item.zoho_item_id, qty - 1)} aria-label="Decrease" style={{ background: 'none', border: 'none', color: '#FFFFFF', cursor: 'pointer', display: 'flex' }}>
-              <Minus size={18} />
+              <Minus size={16} />
             </button>
-            <span style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 16 }}>{qty}</span>
+            <span style={{ color: '#FFFFFF', fontWeight: 700, fontSize: 15 }}>{qty}</span>
             <button onClick={() => updateQty(item.zoho_item_id, qty + 1)} aria-label="Increase" style={{ background: 'none', border: 'none', color: '#FFFFFF', cursor: 'pointer', display: 'flex' }}>
-              <Plus size={18} />
+              <Plus size={16} />
             </button>
           </div>
-        )}
-
-        {/* View cart shortcut — only when item is in cart */}
-        {qty > 0 && (
-          <button
-            onClick={() => router.push('/cart')}
-            aria-label="View cart"
-            style={{ width: 44, height: 44, background: '#E6F0FA', border: 'none', borderRadius: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <ShoppingCart size={20} color="#0066CC" />
-          </button>
         )}
       </div>
     </div>

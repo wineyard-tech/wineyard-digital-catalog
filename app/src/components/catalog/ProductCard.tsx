@@ -91,22 +91,22 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
           unoptimized={!item.image_url || imgError}
         />
 
-        {/* OOS-only banner — full-width, centered, at top */}
+        {/* OOS-only badge — auto-width, centered over thumbnail */}
         {isOOS && (
           <div
             style={{
               position: 'absolute',
               top: 0,
-              left: 0,
-              right: 0,
+              left: '50%',
+              transform: 'translateX(-50%)',
               background: '#64748B',
               color: '#FFFFFF',
               fontSize: 11,
               fontWeight: 600,
-              padding: '4px 0',
-              textAlign: 'center',
+              padding: '4px 10px',
               borderRadius: '0 0 6px 6px',
               letterSpacing: '0.03em',
+              whiteSpace: 'nowrap',
             }}
           >
             Out of Stock
