@@ -26,7 +26,8 @@ export async function GET(request: NextRequest) {
     }
     // Guest — zohoContactId stays null; pricing always returns base_rate
   } else {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    // Anonymous access — no session or guest token.
+    // zohoContactId stays null; resolvePrice returns base_rate for all items.
   }
 
   // ── Parse query params ────────────────────────────────────────────────────
