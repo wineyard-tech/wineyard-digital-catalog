@@ -3,7 +3,13 @@
 import { useRouter } from 'next/navigation'
 import { useCart } from './CartContext'
 
-export default function CartBar() {
+const THUMB_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><rect width="28" height="28" fill="#D1FAE5"/><text x="14" y="19" text-anchor="middle" fill="#059669" font-size="14">📦</text></svg>`
+)}`
+
+interface CartBarProps { bottom?: number }
+
+export default function CartBar({ bottom = 76 }: CartBarProps) {
   const { items, itemCount } = useCart()
   const router = useRouter()
 
@@ -15,7 +21,7 @@ export default function CartBar() {
     <div
       style={{
         position: 'fixed',
-        bottom: 76,
+        bottom,
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 39,
@@ -70,7 +76,8 @@ export default function CartBar() {
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                 ) : (
-                  <span style={{ fontSize: 12 }}>🛒</span>
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={THUMB_PLACEHOLDER} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
               </div>
             ))}

@@ -76,8 +76,14 @@ export default function CartPage() {
           <ArrowLeft size={22} color="#1A1A2E" />
         </button>
         <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#1A1A2E', flex: 1, textAlign: 'center' }}>Cart</h1>
-        {/* Spacer to balance back button and keep title centered */}
-        <div style={{ width: 32 }} aria-hidden="true" />
+        {/* Clear Cart */}
+        <button
+          onClick={clearCart}
+          disabled={items.length === 0}
+          style={{ background: 'none', border: 'none', cursor: items.length === 0 ? 'default' : 'pointer', color: items.length === 0 ? '#D1D5DB' : '#EF4444', fontSize: 13, fontWeight: 600, padding: '4px 0', width: 48, textAlign: 'right' }}
+        >
+          Clear
+        </button>
       </header>
 
       {/* Scrollable content */}
