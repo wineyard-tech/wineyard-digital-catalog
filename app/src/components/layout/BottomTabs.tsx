@@ -38,7 +38,7 @@ export default function BottomTabs() {
       }}
     >
       {TABS.map(({ label, icon: Icon, href }) => {
-        const active = pathname === href
+        const active = href === '/catalog' ? pathname === '/catalog' : pathname.startsWith(href)
         return (
           <button
             key={href}

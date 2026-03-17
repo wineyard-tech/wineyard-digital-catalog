@@ -5,7 +5,6 @@ import { User, ChevronDown } from 'lucide-react'
 import type { CatalogItem } from '../../../../types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
-import CartBar from '../../components/cart/CartBar'
 import OfflineBanner from '../../components/shared/OfflineBanner'
 
 interface CatalogClientProps {
@@ -121,9 +120,6 @@ export default function CatalogClient({
       <div style={{ padding: '12px 12px 0' }}>
         <ProductGrid items={items} loading={loading} guestMode={false} />
       </div>
-
-      {/* Floating cart button */}
-      <CartBar />
     </div>
   )
 }
