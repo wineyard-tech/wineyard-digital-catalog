@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Minus, Plus, Trash2, MessageCircle, X } from 'lucide-react'
 import { useCart } from './CartContext'
 import type { EnquiryResponse } from '../../../../types/catalog'
 
@@ -112,14 +113,15 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
             style={{
               background: 'none',
               border: 'none',
-              fontSize: 22,
               color: '#6B7280',
               cursor: 'pointer',
-              lineHeight: 1,
               padding: 4,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            ×
+            <X size={20} />
           </button>
         </div>
 
@@ -209,12 +211,13 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                         border: 'none',
                         borderRadius: 6,
                         color: '#374151',
-                        fontSize: 16,
-                        fontWeight: 700,
                         cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
-                      −
+                      <Minus size={14} />
                     </button>
                     <span style={{ fontSize: 14, fontWeight: 700, minWidth: 20, textAlign: 'center' }}>
                       {item.quantity}
@@ -225,16 +228,17 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                       style={{
                         width: 28,
                         height: 28,
-                        background: '#0066CC',
+                        background: '#059669',
                         border: 'none',
                         borderRadius: 6,
                         color: '#FFFFFF',
-                        fontSize: 16,
-                        fontWeight: 700,
                         cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
                     >
-                      +
+                      <Plus size={14} />
                     </button>
                     <button
                       onClick={() => removeItem(item.zoho_item_id)}
@@ -245,14 +249,13 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                         background: 'none',
                         border: 'none',
                         color: '#EF4444',
-                        fontSize: 14,
                         cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}
                     >
-                      🗑
+                      <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
@@ -345,7 +348,10 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                     Sending quote…
                   </>
                 ) : (
-                  'Get Quote on WhatsApp'
+                  <>
+                    <MessageCircle size={18} />
+                    Get Quote on WhatsApp
+                  </>
                 )}
               </button>
             </div>

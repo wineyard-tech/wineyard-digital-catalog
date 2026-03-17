@@ -23,6 +23,7 @@ export interface CartItem {
   rate: number;
   tax_percentage: 18;
   line_total: number;
+  image_url?: string | null;
 }
 
 export interface SessionPayload {

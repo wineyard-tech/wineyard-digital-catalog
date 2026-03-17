@@ -2,8 +2,8 @@
 
 import Image from 'next/image'
 import { useState } from 'react'
+import { Plus, Minus } from 'lucide-react'
 import type { CatalogItem } from '../../../../types/catalog'
-import StockBadge from './StockBadge'
 import { useCart } from '../cart/CartContext'
 
 interface ProductCardProps {
@@ -17,6 +17,12 @@ function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
+const BADGE_CONFIG = {
+  available:    { label: 'Available',     bg: '#059669' },
+  limited:      { label: 'Limited Stock', bg: '#B45309' },
+  out_of_stock: { label: 'Out of Stock',  bg: '#64748B' },
+}
+
 export default function ProductCard({ item, guestMode = false }: ProductCardProps) {
   const { items, addItem, updateQty } = useCart()
   const [imgError, setImgError] = useState(false)
@@ -25,7 +31,7 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
   const qty = cartEntry?.quantity ?? 0
 
   function handleAdd() {
-    if (guestMode || qty > 0) return
+    if (guestMode || isOOS) return
     addItem({
       zoho_item_id: item.zoho_item_id,
       item_name: item.item_name,
@@ -34,25 +40,26 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
+      image_url: item.image_url,
     })
   }
 
   const isOOS = item.stock_status === 'out_of_stock'
-  const priceLabel = item.price_type === 'custom' ? 'Your Price' : 'MRP'
   const imgSrc = !imgError && item.image_url ? item.image_url : PLACEHOLDER
+  const badge = BADGE_CONFIG[item.stock_status]
 
   return (
     <div
       style={{
         background: '#FFFFFF',
-        borderRadius: 12,
+        borderRadius: 8,
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      {/* Product image */}
+      {/* Product image with overlaid badge + cart controls */}
       <div style={{ position: 'relative', height: 120, background: '#F9FAFB' }}>
         <Image
           src={imgSrc}
@@ -63,15 +70,120 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
           sizes="(max-width: 640px) 50vw, 33vw"
           unoptimized={!item.image_url || imgError}
         />
+
+        {/* Stock badge — top-left, rounded-b-md (bottom corners only) */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            background: badge.bg,
+            color: '#FFFFFF',
+            fontSize: 10,
+            fontWeight: 600,
+            padding: '3px 8px',
+            borderRadius: '0 0 6px 0',
+            letterSpacing: '0.02em',
+          }}
+        >
+          {badge.label}
+        </div>
+
+        {/* Cart controls — bottom-right inside image */}
+        {!guestMode && (
+          qty === 0 ? (
+            <button
+              onClick={handleAdd}
+              disabled={isOOS}
+              aria-label="Add to cart"
+              style={{
+                position: 'absolute',
+                bottom: 8,
+                right: 8,
+                width: 32,
+                height: 32,
+                border: `2px solid ${isOOS ? '#9CA3AF' : '#059669'}`,
+                borderRadius: 6,
+                background: 'transparent',
+                cursor: isOOS ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                opacity: isOOS ? 0.5 : 1,
+              }}
+            >
+              <Plus size={16} color={isOOS ? '#9CA3AF' : '#059669'} />
+            </button>
+          ) : (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 8,
+                right: 8,
+                display: 'flex',
+                alignItems: 'center',
+                background: '#059669',
+                borderRadius: 6,
+                overflow: 'hidden',
+              }}
+            >
+              <button
+                onClick={() => updateQty(item.zoho_item_id, qty - 1)}
+                aria-label="Decrease quantity"
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: 'none',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Minus size={14} />
+              </button>
+              <span
+                style={{
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  minWidth: 18,
+                  textAlign: 'center',
+                }}
+              >
+                {qty}
+              </span>
+              <button
+                onClick={() => updateQty(item.zoho_item_id, qty + 1)}
+                aria-label="Increase quantity"
+                style={{
+                  width: 28,
+                  height: 28,
+                  background: 'none',
+                  border: 'none',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+          )
+        )}
       </div>
 
-      {/* Content */}
+      {/* Card content */}
       <div style={{ padding: '10px 12px 12px', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <p
           style={{
             margin: '0 0 2px',
-            fontSize: 13,
-            fontWeight: 600,
+            fontSize: 14,
+            fontWeight: 500,
             color: '#1A1A2E',
             lineHeight: 1.35,
             display: '-webkit-box',
@@ -82,112 +194,16 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
         >
           {item.item_name}
         </p>
-        <p style={{ margin: '0 0 6px', fontSize: 11, color: '#9CA3AF' }}>{item.sku}</p>
+        <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9CA3AF' }}>{item.sku}</p>
 
-        <div style={{ marginBottom: 8 }}>
-          <StockBadge status={item.stock_status} />
-        </div>
-
-        <div style={{ marginBottom: 10 }}>
-          <span style={{ fontSize: 11, color: '#6B7280' }}>{priceLabel} </span>
-          <span style={{ fontSize: 16, fontWeight: 700, color: '#0066CC' }}>{fmt(item.final_price)}</span>
-        </div>
-
-        {/* Add to cart / qty controls */}
-        {guestMode ? (
-          <button
-            disabled
-            title="WhatsApp us to register and get your custom pricing"
-            style={{
-              width: '100%',
-              background: '#F3F4F6',
-              color: '#9CA3AF',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 0',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'not-allowed',
-            }}
-          >
-            Register to Order
-          </button>
-        ) : qty === 0 ? (
-          <button
-            onClick={handleAdd}
-            disabled={isOOS}
-            style={{
-              width: '100%',
-              background: isOOS ? '#F3F4F6' : '#059669',
-              color: isOOS ? '#9CA3AF' : '#FFFFFF',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 0',
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: isOOS ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {isOOS ? 'Out of Stock' : 'Add to Cart'}
-          </button>
-        ) : (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              background: '#E6F0FA',
-              borderRadius: 8,
-              padding: '4px 8px',
-            }}
-          >
-            <button
-              onClick={() => updateQty(item.zoho_item_id, qty - 1)}
-              aria-label="Decrease quantity"
-              style={{
-                width: 28,
-                height: 28,
-                background: '#FFFFFF',
-                border: '1px solid #0066CC',
-                borderRadius: 6,
-                color: '#0066CC',
-                fontSize: 18,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                lineHeight: 1,
-              }}
-            >
-              −
-            </button>
-            <span style={{ fontWeight: 700, color: '#0066CC', fontSize: 15, minWidth: 24, textAlign: 'center' }}>
-              {qty}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: '#0066CC' }}>{fmt(item.final_price)}</span>
+          {item.price_type === 'custom' && item.base_rate !== item.final_price && (
+            <span style={{ fontSize: 12, color: '#9CA3AF', textDecoration: 'line-through' }}>
+              {fmt(item.base_rate)}
             </span>
-            <button
-              onClick={() => updateQty(item.zoho_item_id, qty + 1)}
-              aria-label="Increase quantity"
-              style={{
-                width: 28,
-                height: 28,
-                background: '#0066CC',
-                border: 'none',
-                borderRadius: 6,
-                color: '#FFFFFF',
-                fontSize: 18,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                lineHeight: 1,
-              }}
-            >
-              +
-            </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

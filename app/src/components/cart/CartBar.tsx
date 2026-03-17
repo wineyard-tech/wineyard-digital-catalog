@@ -4,68 +4,95 @@ import { useState } from 'react'
 import { useCart } from './CartContext'
 import CartSheet from './CartSheet'
 
-function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
-}
-
 export default function CartBar() {
-  const { itemCount, subtotal } = useCart()
+  const { items, itemCount } = useCart()
   const [open, setOpen] = useState(false)
 
   if (itemCount === 0) return null
+
+  const thumbnails = items.slice(0, 3)
 
   return (
     <>
       <div
         style={{
           position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          background: '#0066CC',
-          padding: '12px 16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+          bottom: 80,
+          left: '50%',
+          transform: 'translateX(-50%)',
           zIndex: 40,
-          boxShadow: '0 -2px 16px rgba(0,102,204,0.25)',
+          minWidth: 200,
         }}
       >
-        <div style={{ color: '#FFFFFF' }}>
+        <button
+          onClick={() => setOpen(true)}
+          aria-label="View cart"
+          style={{
+            background: '#059669',
+            border: 'none',
+            borderRadius: 999,
+            padding: '10px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            width: '100%',
+            justifyContent: 'center',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {/* Overlapping product thumbnails */}
+          {thumbnails.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              {thumbnails.map((item, idx) => (
+                <div
+                  key={item.zoho_item_id}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    border: '2px solid #059669',
+                    background: '#F0FDF4',
+                    overflow: 'hidden',
+                    marginLeft: idx === 0 ? 0 : -10,
+                    position: 'relative',
+                    zIndex: thumbnails.length - idx,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  {item.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.image_url}
+                      alt={item.item_name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: 12 }}>🛒</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <span style={{ color: '#FFFFFF', fontSize: 14, fontWeight: 700 }}>View Cart</span>
+
           <span
             style={{
-              background: '#FFFFFF',
-              color: '#0066CC',
+              background: 'rgba(255,255,255,0.25)',
+              color: '#FFFFFF',
               borderRadius: 999,
               fontSize: 12,
               fontWeight: 700,
               padding: '2px 8px',
-              marginRight: 8,
             }}
           >
             {itemCount}
           </span>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>item{itemCount !== 1 ? 's' : ''} in cart</span>
-        </div>
-        <button
-          onClick={() => setOpen(true)}
-          style={{
-            background: '#FFFFFF',
-            color: '#0066CC',
-            border: 'none',
-            borderRadius: 8,
-            padding: '8px 16px',
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-          aria-label="View cart"
-        >
-          {fmt(subtotal)}
-          <span style={{ fontSize: 16 }}>›</span>
         </button>
       </div>
 
