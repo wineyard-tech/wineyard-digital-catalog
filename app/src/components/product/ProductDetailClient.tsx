@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowLeft, Search, Share2, Plus, Minus } from 'lucide-react'
-import type { CatalogItem } from '../../../../types/catalog'
+import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
 

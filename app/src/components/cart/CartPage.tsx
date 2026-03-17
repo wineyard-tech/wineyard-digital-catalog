@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
-import type { EnquiryResponse } from '../../../../types/catalog'
+import type { EnquiryResponse } from '@/types/catalog'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })

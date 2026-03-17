@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { User, ChevronDown } from 'lucide-react'
-import type { CatalogItem } from '../../../../types/catalog'
+import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
 import OfflineBanner from '../../components/shared/OfflineBanner'

@@ -1,4 +1,4 @@
-import type { CartItem } from '../../../types/catalog'
+import type { CartItem } from '@/types/catalog'
 
 const WA_API_BASE = 'https://graph.facebook.com/v19.0'
 
