@@ -5,8 +5,8 @@
 // (sync-contacts) by keeping the contact list current within seconds.
 //
 // Event routing (single endpoint, all event types):
-//   contact_created | contact_updated  →  handleUpsert()
-//   contact_deleted                    →  handleDelete()
+//   contact_created | contact_updated  →  handleUpsert()  (UPSERT contact + persons; soft-deactivate removed persons)
+//   contact_deleted                    →  handleDelete()  (soft-delete: status='inactive', never hard-delete)
 //
 // Always returns HTTP 200 — even on processing errors — to prevent Zoho
 // from re-delivering the same webhook endlessly. Failures are logged to
@@ -170,63 +170,81 @@ async function handleUpsert(
   }
 
   // ── 4. Sync contact persons ─────────────────────────────────────────────────
-  // Delete-then-insert (not UPSERT) so removed persons are cleaned up.
-  // A partial update would leave stale rows for persons no longer on the contact.
-  // The contact row exists at this point so FK constraint is satisfied.
+  // Strategy:
+  //   a) UPSERT all persons present in the payload (zoho_contact_person_id is PK)
+  //   b) Persons previously in Zoho but absent from this payload → status='inactive'
+  //      (soft-delete preserves audit history; never hard-delete)
+  //
+  // If the payload omits the contact_persons array entirely (some Zoho partial-
+  // field updates do this), skip both steps to avoid incorrectly deactivating
+  // existing persons.
   const persons: ZohoContactPerson[] = contact.contact_persons ?? []
+  const personsArrayPresent = Array.isArray(contact.contact_persons)
 
-  // Always run delete-then-insert when persons are present in the payload.
-  // If no persons array is sent, skip to avoid wiping existing persons on a
-  // partial-field update (some Zoho events omit child arrays).
-  if (persons.length > 0) {
-    const { error: delErr } = await supabase
-      .from('contact_persons')
-      .delete()
-      .eq('zoho_contact_id', contactId)
+  if (personsArrayPresent) {
+    const validPersons = persons.filter((p) => p.contact_person_id)
+    const incomingIds  = validPersons.map((p) => p.contact_person_id)
 
-    if (delErr) {
-      console.warn(`[contacts-webhook] contact_persons delete warning (${contactId}):`, delErr.message)
-    }
-
-    const personRows = persons
-      .filter((p) => p.contact_person_id)
-      .map((p) => ({
-        zoho_contact_person_id: p.contact_person_id,
-        zoho_contact_id:        contactId,
-        first_name:             p.first_name || null,
-        last_name:              p.last_name || null,
-        email:                  p.email || null,
-        phone:                  normalizeIndianPhone(p.phone),
-        mobile:                 normalizeIndianPhone(p.mobile),
-        is_primary:             p.is_primary_contact ?? false,
+    // ── a) UPSERT active persons from payload ────────────────────────────────
+    if (validPersons.length > 0) {
+      const personRows = validPersons.map((p) => ({
+        zoho_contact_person_id:   p.contact_person_id,
+        zoho_contact_id:          contactId,
+        first_name:               p.first_name || null,
+        last_name:                p.last_name || null,
+        email:                    p.email || null,
+        phone:                    normalizeIndianPhone(p.phone),
+        mobile:                   normalizeIndianPhone(p.mobile),
+        is_primary:               p.is_primary_contact ?? false,
         // communication_preference may be a string or JSON object in Zoho
         communication_preference: p.communication_preference ?? null,
+        status:                   'active',
+        updated_at:               new Date().toISOString(),
       }))
 
-    if (personRows.length > 0) {
-      const { error: personsErr } = await supabase
+      const { error: upsertErr } = await supabase
         .from('contact_persons')
-        .insert(personRows)
+        .upsert(personRows, { onConflict: 'zoho_contact_person_id' })
 
-      if (personsErr) {
-        // Non-fatal: contact is already saved; log but don't fail the whole request
-        console.warn(`[contacts-webhook] contact_persons insert warning (${contactId}):`, personsErr.message)
+      if (upsertErr) {
+        // Non-fatal: contact row is already saved; log but don't fail the request
+        console.warn(`[contacts-webhook] contact_persons upsert warning (${contactId}):`, upsertErr.message)
         await logError(supabase, {
           event_type: eventType,
           zoho_entity_id: contactId,
-          error_message: `contact_persons insert failed: ${personsErr.message}`,
+          error_message: `contact_persons upsert failed: ${upsertErr.message}`,
           payload: rawPayload,
         })
       }
     }
+
+    // ── b) Soft-delete persons no longer in the payload ──────────────────────
+    // Build the NOT IN filter only when there are incoming IDs; if the payload
+    // has an empty array every existing person should be deactivated.
+    let deactivateQuery = supabase
+      .from('contact_persons')
+      .update({ status: 'inactive', updated_at: new Date().toISOString() })
+      .eq('zoho_contact_id', contactId)
+      .eq('status', 'active') // skip already-inactive rows
+
+    if (incomingIds.length > 0) {
+      deactivateQuery = deactivateQuery.not(
+        'zoho_contact_person_id', 'in', `(${incomingIds.join(',')})`
+      )
+    }
+
+    const { error: deactivateErr } = await deactivateQuery
+    if (deactivateErr) {
+      console.warn(`[contacts-webhook] contact_persons deactivate warning (${contactId}):`, deactivateErr.message)
+    }
   }
 
   console.log(
-    `[contacts-webhook] ${eventType} OK — contact_id=${contactId}, persons=${persons.length}, pricebook=${pricebookId ?? 'none'}`
+    `[contacts-webhook] ${eventType} OK — contact_id=${contactId}, persons_upserted=${persons.filter(p => p.contact_person_id).length}, pricebook=${pricebookId ?? 'none'}`
   )
 }
 
-// ── Delete handler ────────────────────────────────────────────────────────────
+// ── Delete handler (soft-delete) ─────────────────────────────────────────────
 
 async function handleDelete(
   supabase: SupabaseClient,
@@ -236,23 +254,36 @@ async function handleDelete(
   const contactId = contact.contact_id
   if (!contactId) throw new Error('Missing contact_id in delete payload')
 
-  // CASCADE on contact_persons means child rows are auto-deleted when the contact row goes.
-  const { error } = await supabase
+  // Soft-delete: mark contact inactive rather than hard-deleting.
+  // Preserves order history, audit trail, and referential integrity with
+  // estimates/sales_orders that reference this contact.
+  const { error: contactErr } = await supabase
     .from('contacts')
-    .delete()
+    .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_contact_id', contactId)
 
-  if (error) {
+  if (contactErr) {
     await logError(supabase, {
       event_type: 'deleted',
       zoho_entity_id: contactId,
-      error_message: `Delete failed: ${error.message}`,
+      error_message: `Soft-delete failed: ${contactErr.message}`,
       payload: rawPayload,
     })
-    throw error
+    throw contactErr
   }
 
-  console.log(`[contacts-webhook] deleted OK — contact_id=${contactId}`)
+  // Also deactivate all contact persons — they're meaningless without an active contact.
+  const { error: personsErr } = await supabase
+    .from('contact_persons')
+    .update({ status: 'inactive', updated_at: new Date().toISOString() })
+    .eq('zoho_contact_id', contactId)
+
+  if (personsErr) {
+    // Non-fatal: contact is already deactivated; log and continue.
+    console.warn(`[contacts-webhook] contact_persons deactivate-on-delete warning (${contactId}):`, personsErr.message)
+  }
+
+  console.log(`[contacts-webhook] soft-deleted OK — contact_id=${contactId}`)
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
