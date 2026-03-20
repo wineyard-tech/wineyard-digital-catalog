@@ -14,7 +14,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { normalizeIndianPhone, extractPhoneFromContact } from '../_shared/phone-normalizer.ts'
+import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -122,10 +122,11 @@ async function handleUpsert(
   // contacts.phone is UNIQUE — it's the key used to look up integrators at login.
   // extractPhoneFromContact cascades through mobile → phone → billing_address.phone
   // → contact_persons in priority order.
-  const phone = extractPhoneFromContact(contact)
-  if (!phone) {
-    throw new Error(`No valid Indian phone found for contact "${contact.contact_name}" (${contactId})`)
+  const phoneResult = extractPhoneFromContact(contact)
+  if (!phoneResult) {
+    throw new Error(`No valid Indian phone found for contact "${contact.contact_name}" (${contactId}) — ${describeContactPhones(contact)}`)
   }
+  const { phone } = phoneResult
 
   // ── 2. Map pricebook ID ─────────────────────────────────────────────────────
   // Older Zoho API sends price_list_id; newer sends pricebook_id. Accept either.
