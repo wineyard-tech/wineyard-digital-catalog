@@ -7,11 +7,10 @@ const WA_API_BASE = 'https://graph.facebook.com/v19.0'
 
 function getConfig() {
   return {
-    phoneNumberId:
-      process.env.WABA_PHONE_NUMBER_ID ?? process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
-    accessToken: process.env.WABA_ACCESS_TOKEN ?? process.env.WHATSAPP_TOKEN ?? '',
-    templateName: process.env.WABA_TEMPLATE_NAME ?? 'wineyard_otp',
-    adminNumber: process.env.ADMIN_WHATSAPP_NUMBER ?? '',
+    phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID ?? '',
+    accessToken: process.env.WHATSAPP_TOKEN ?? '',
+    templateName: process.env.WHATSAPP_OTP_TEMPLATE ?? 'wineyard_otp',
+    adminNumber: process.env.WHATSAPP_ADMIN_NUMBER ?? '',
   }
 }
 
