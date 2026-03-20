@@ -1,0 +1,11 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Drop the FK from item_locations → locations.
+--
+-- Reason: Zoho item detail responses reference warehouse_ids for archived and
+-- inactive warehouses that the /locations API endpoint does not return.
+-- Enforcing this FK blocks item_locations sync for those items.
+--
+-- item_locations.zoho_location_id is kept as a soft reference; data integrity
+-- is maintained at the application level by the sync functions.
+-- ─────────────────────────────────────────────────────────────────────────────
+ALTER TABLE item_locations DROP CONSTRAINT IF EXISTS fk_item_locations_location;
