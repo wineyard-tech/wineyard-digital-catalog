@@ -26,14 +26,12 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
   const [resendCooldown, setResendCooldown] = useState(30)
   const inputs = useRef<(HTMLInputElement | null)[]>([])
 
-  // OTP expiry countdown
   useEffect(() => {
     if (secondsLeft <= 0) return
     const id = setInterval(() => setSecondsLeft((s) => s - 1), 1000)
     return () => clearInterval(id)
   }, [secondsLeft])
 
-  // Resend cooldown
   useEffect(() => {
     if (resendCooldown <= 0) return
     const id = setInterval(() => setResendCooldown((s) => s - 1), 1000)
@@ -76,7 +74,7 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
     setErrorMsg('')
     try {
       const result = await onSubmit(code)
-      if (!result) return // success — parent handles redirect
+      if (!result) return
       if ((result.attemptsLeft ?? 1) <= 0) {
         setUiState('locked')
         setErrorMsg(result.error ?? 'Too many attempts. Please request a new OTP.')
@@ -109,19 +107,20 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
   const code = digits.join('')
   const isLocked = uiState === 'locked'
   const isLoading = uiState === 'loading'
+  const hasError = uiState === 'error'
   const mm = String(Math.floor(secondsLeft / 60)).padStart(2, '0')
   const ss = String(secondsLeft % 60).padStart(2, '0')
   const displayPhone = phoneNumber.replace('+91', '+91 ').replace(/(\d{5})(\d{5})$/, '$1 $2')
 
   return (
-    <div style={{ width: '100%' }}>
-      <p style={{ margin: '0 0 20px', fontSize: 14, color: '#6B7280', textAlign: 'center' }}>
+    <div className="w-full">
+      <p className="mb-5 text-sm text-[#64748B] text-center">
         OTP sent to{' '}
-        <strong style={{ color: '#1A1A2E' }}>{displayPhone}</strong>
+        <span className="font-semibold text-[#0F172A]">{displayPhone}</span>
       </p>
 
       {/* 6 digit boxes */}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginBottom: 16 }}>
+      <div className="flex gap-2 justify-center mb-4">
         {digits.map((digit, idx) => (
           <input
             key={idx}
@@ -136,46 +135,31 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
             onKeyDown={(e) => handleKeyDown(idx, e)}
             onPaste={idx === 0 ? handlePaste : undefined}
             aria-label={`OTP digit ${idx + 1}`}
-            style={{
-              width: 44,
-              height: 52,
-              textAlign: 'center',
-              fontSize: 22,
-              fontWeight: 700,
-              border: uiState === 'error' ? '2px solid #EF4444' : '2px solid #E5E7EB',
-              borderRadius: 10,
-              outline: 'none',
-              background: isLocked ? '#F3F4F6' : '#FFF',
-              color: isLocked ? '#9CA3AF' : '#1A1A2E',
-              transition: 'border-color 0.15s',
-            }}
+            className={`w-11 h-13 text-center text-xl font-bold rounded-xl outline-none transition-colors
+              ${isLocked || isLoading ? 'bg-[#F1F5F9] text-[#94A3B8]' : 'bg-[#F1F5F9] text-[#0F172A]'}
+              ${hasError ? 'ring-2 ring-[#DC2626]' : 'focus:ring-2 focus:ring-[#0066CC]'}
+            `}
+            style={{ height: 52 }}
           />
         ))}
       </div>
 
       {/* Timer */}
       {!isLocked && secondsLeft > 0 && (
-        <p style={{ margin: '0 0 10px', fontSize: 13, color: '#6B7280', textAlign: 'center' }}>
+        <p className="mb-3 text-xs text-[#64748B] text-center">
           Expires in{' '}
-          <span
-            style={{
-              fontWeight: 700,
-              color: secondsLeft < 60 ? '#DC2626' : '#1A1A2E',
-            }}
-          >
+          <span className={`font-bold ${secondsLeft < 60 ? 'text-[#DC2626]' : 'text-[#0F172A]'}`}>
             {mm}:{ss}
           </span>
         </p>
       )}
 
-      {/* Error / locked message */}
-      {(uiState === 'error' || isLocked) && (
-        <p style={{ margin: '0 0 12px', textAlign: 'center', fontSize: 13, color: '#DC2626' }}>
+      {/* Error */}
+      {(hasError || isLocked) && (
+        <p className="mb-3 text-center text-xs text-[#DC2626]">
           {errorMsg}
           {attemptsLeft !== null && attemptsLeft > 0 && (
-            <span>
-              {' '}({attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} left)
-            </span>
+            <span> ({attemptsLeft} attempt{attemptsLeft !== 1 ? 's' : ''} left)</span>
           )}
         </p>
       )}
@@ -185,35 +169,15 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
         <button
           onClick={() => code.length === 6 && doSubmit(code)}
           disabled={code.length < 6 || isLoading}
-          style={{
-            width: '100%',
-            background: code.length < 6 || isLoading ? '#9CA3AF' : '#059669',
-            color: '#FFF',
-            border: 'none',
-            borderRadius: 10,
-            padding: '14px 0',
-            fontSize: 16,
-            fontWeight: 700,
-            cursor: code.length < 6 || isLoading ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-          }}
+          className={`w-full h-12 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-colors ${
+            code.length < 6 || isLoading
+              ? 'bg-[#CBD5E1] cursor-not-allowed'
+              : 'bg-[#059669] active:bg-[#047857]'
+          }`}
         >
           {isLoading ? (
             <>
-              <span
-                style={{
-                  width: 18,
-                  height: 18,
-                  border: '2px solid rgba(255,255,255,0.4)',
-                  borderTopColor: '#FFF',
-                  borderRadius: '50%',
-                  display: 'inline-block',
-                  animation: 'spin 0.7s linear infinite',
-                }}
-              />
+              <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
               Verifying…
             </>
           ) : (
@@ -226,22 +190,14 @@ export default function OTPInput({ phoneNumber, expiresIn, onSubmit, onResend }:
       <button
         onClick={handleResend}
         disabled={resendCooldown > 0}
-        style={{
-          marginTop: 12,
-          width: '100%',
-          background: 'none',
-          border: 'none',
-          color: resendCooldown > 0 ? '#9CA3AF' : '#0066CC',
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer',
-          padding: '4px 0',
-        }}
+        className={`mt-3 w-full py-1 text-sm font-semibold bg-transparent border-none transition-colors ${
+          resendCooldown > 0
+            ? 'text-[#CBD5E1] cursor-not-allowed'
+            : 'text-[#0066CC] active:opacity-70'
+        }`}
       >
         {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : 'Resend OTP'}
       </button>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
