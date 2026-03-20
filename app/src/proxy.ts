@@ -1,4 +1,4 @@
-// middleware.ts
+// proxy.ts  (Next.js 16 convention — replaces middleware.ts)
 // Edge Runtime — runs before every matching request.
 //
 // Admin routes: protected via Supabase Auth (existing behaviour).
@@ -13,7 +13,7 @@ import type { NextRequest } from 'next/server'
 
 const PROTECTED_PREFIXES = ['/catalog', '/cart', '/orders', '/profile']
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl
 
   // ── Admin routes: Supabase Auth ───────────────────────────────────────────
@@ -60,7 +60,7 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next()
 }
 
-export default middleware
+export default proxy
 
 export const config = {
   matcher: [
