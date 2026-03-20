@@ -94,8 +94,9 @@ function dec(val: unknown): number | null {
 function normaliseEventType(raw: string | undefined): 'created' | 'updated' | 'deleted' | null {
   if (!raw) return null
   const lower = raw.toLowerCase().replace(/[^a-z]/g, '_')
+  // 'upsert' is our own query param convention for Zoho's create/update webhook
   const CREATED = new Set(['item_created', 'create', 'created'])
-  const UPDATED = new Set(['item_updated', 'update', 'updated'])
+  const UPDATED = new Set(['item_updated', 'update', 'updated', 'upsert'])
   const DELETED = new Set(['item_deleted', 'delete', 'deleted'])
   if (CREATED.has(lower)) return 'created'
   if (UPDATED.has(lower)) return 'updated'
@@ -322,19 +323,29 @@ serve(async (req: Request) => {
     return new Response('OK', { status: 200 })
   }
 
-  // Resolve event type from either field Zoho might send
-  const rawEventType = rawPayload.event_type ?? rawPayload.webhook_event
+  // Resolve event type: check JSON body first, then fall back to URL query param.
+  // Zoho Books sends the raw entity object as the body — it does NOT embed event_type
+  // in the JSON. The 'action' query param is configured by us in Zoho's webhook URL
+  // (e.g. ?action=upsert or ?action=delete) to signal the event type.
+  const url = new URL(req.url)
+  const rawEventType = rawPayload.event_type
+    ?? rawPayload.webhook_event
+    ?? url.searchParams.get('action')
+    ?? undefined
   const eventType = normaliseEventType(rawEventType)
 
   if (!eventType) {
-    console.error(`[items-webhook] Unknown event_type: "${rawEventType}"`)
+    console.error(`[items-webhook] Unknown event_type: "${rawEventType}" — add ?action=upsert or ?action=delete to the Zoho webhook URL`)
     return new Response('OK', { status: 200 })
   }
 
-  // Zoho normally embeds the item under rawPayload.data, but some webhook
-  // versions send the item at the top level (rawPayload.item_id directly).
-  // Fall back to the top-level payload shape if .data is absent.
-  const item = (rawPayload.data ?? rawPayload) as ZohoItemPayload | undefined
+  // Zoho Books wraps the entity under a module-named key in the webhook body,
+  // mirroring their REST API shape: { "item": { "item_id": "...", ... } }.
+  // Fall back chain: rawPayload.item → rawPayload.data → rawPayload (top-level).
+  const raw = rawPayload as Record<string, unknown>
+  const item = (
+    raw['item'] ?? raw['data'] ?? rawPayload
+  ) as ZohoItemPayload | undefined
   if (!item?.item_id) {
     console.error('[items-webhook] Cannot extract item_id from payload:', JSON.stringify(rawPayload))
     return new Response('OK', { status: 200 })
