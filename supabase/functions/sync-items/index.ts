@@ -1,11 +1,13 @@
 // sync-items Edge Function
-// Fetches all active items from Zoho Books and upserts into items, categories, brands tables.
+// Incremental sync: fetches only items modified since yesterday 03:55 AM IST.
+// Runs daily at 04:00 AM IST via pg_cron. The 5-minute overlap prevents
+// records modified on the exact boundary minute from being missed.
 // Stock tracking is intentionally skipped (Phase 1) — all items treated as available.
 // Pricing uses item.rate (default selling price); pricebook tiers to be added in Phase 2.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getZohoToken, fetchAllZohoPages } from '../_shared/zoho-client.ts'
+import { getZohoToken, fetchAllZohoPages, getLastModifiedFilter } from '../_shared/zoho-client.ts'
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
@@ -37,16 +39,19 @@ serve(async (req) => {
   try {
     const token = await getZohoToken(supabase)
 
-    // Fetch all active items from Zoho Books
+    // Fetch only items modified since yesterday 03:55 AM IST (incremental sync)
+    const lastModified = getLastModifiedFilter()
+    console.log(`Fetching items modified since ${lastModified}`)
+
     const zohoItems = await fetchAllZohoPages<any>(
       '/items',
       token,
       ORG_ID,
       'items',
-      { filter_by: 'Status.Active' }
+      { filter_by: 'Status.Active', last_modified_time: lastModified }
     )
 
-    console.log(`Fetched ${zohoItems.length} items from Zoho`)
+    console.log(`Fetched ${zohoItems.length} modified items from Zoho`)
 
     // ── Upsert categories (deduplicated) ──────────────────────────────────────
     const categoryMap = new Map<string, string>()
@@ -64,7 +69,16 @@ serve(async (req) => {
       const { error: catErr } = await supabase
         .from('categories')
         .upsert(categories, { onConflict: 'zoho_category_id', ignoreDuplicates: false })
-      if (catErr) console.warn('Category upsert warning:', catErr.message)
+      if (catErr) {
+        // Batch failed — likely category_name UNIQUE conflict (duplicate names in Zoho).
+        // Retry row-by-row to isolate the offending category without losing the rest.
+        for (const cat of categories) {
+          const { error: rowErr } = await supabase
+            .from('categories')
+            .upsert(cat, { onConflict: 'zoho_category_id', ignoreDuplicates: false })
+          if (rowErr) console.warn(`Category "${cat.category_name}" (${cat.zoho_category_id}): ${rowErr.message}`)
+        }
+      }
     }
 
     // ── Upsert brands (deduplicated) ──────────────────────────────────────────
@@ -155,6 +169,7 @@ serve(async (req) => {
       skipped_skus: skippedSkus,
       categories_found: categoryMap.size,
       brands_found: brandSet.size,
+      last_modified_since: lastModified,
       synced_at: new Date().toISOString(),
     }
 
