@@ -67,6 +67,8 @@ type CartContextValue = {
   removeItem: (zoho_item_id: string) => void
   updateQty: (zoho_item_id: string, quantity: number) => void
   clearCart: () => void
+  /** Replace the entire cart with the provided items (e.g. when restoring from a deep-link estimate). */
+  loadItems: (items: CartItem[]) => void
 }
 
 const CartContext = createContext<CartContextValue | null>(null)
@@ -109,6 +111,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     removeItem: (zoho_item_id) => dispatch({ type: 'REMOVE_ITEM', zoho_item_id }),
     updateQty: (zoho_item_id, quantity) => dispatch({ type: 'UPDATE_QTY', zoho_item_id, quantity }),
     clearCart: () => dispatch({ type: 'CLEAR_CART' }),
+    loadItems: (items) => dispatch({ type: 'HYDRATE', items }),
   }
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>

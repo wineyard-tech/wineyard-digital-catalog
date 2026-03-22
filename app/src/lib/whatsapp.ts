@@ -8,7 +8,21 @@ interface QuoteTotals {
   total: number
 }
 
-async function callWhatsAppApi(payload: Record<string, unknown>): Promise<void> {
+export interface WaSendResult {
+  success: boolean
+  messageId?: string
+  error?: string
+}
+
+interface WaApiResponse {
+  messages?: Array<{ id: string }>
+}
+
+/**
+ * Posts to the WhatsApp Cloud API.
+ * Returns the WAMID (message ID) from the response for tracking.
+ */
+async function callWhatsAppApi(payload: Record<string, unknown>): Promise<string | undefined> {
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID!
   const token = process.env.WHATSAPP_TOKEN!
 
@@ -25,11 +39,14 @@ async function callWhatsAppApi(payload: Record<string, unknown>): Promise<void> 
     const body = await res.text()
     throw new Error(`WhatsApp API error ${res.status}: ${body}`)
   }
+
+  const data: WaApiResponse = await res.json()
+  return data.messages?.[0]?.id
 }
 
-/** Sends a plain text WhatsApp message. */
-export async function sendText(to: string, body: string): Promise<void> {
-  await callWhatsAppApi({
+/** Sends a plain text WhatsApp message. Returns the WAMID. */
+export async function sendText(to: string, body: string): Promise<string | undefined> {
+  return callWhatsAppApi({
     to,
     type: 'text',
     text: { preview_url: false, body },
@@ -79,14 +96,15 @@ export async function sendGuestLink(
 }
 
 /**
- * Sends a formatted quotation summary via WhatsApp.
+ * Sends a formatted quotation summary via WhatsApp plain text.
+ * Used as fallback when the WABA template is unavailable.
  */
 export async function sendQuotation(
   to: string,
   estimateNumber: string,
   items: CartItem[],
   totals: QuoteTotals
-): Promise<void> {
+): Promise<WaSendResult> {
   const fmt = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
@@ -105,5 +123,188 @@ export async function sendQuotation(
     `─────────────────────────────\n` +
     `Reply *YES* to confirm or call us.`
 
-  await sendText(to, message)
+  try {
+    const messageId = await sendText(to, message)
+    return { success: true, messageId }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+export interface EstimateTemplateData {
+  customerName: string
+  companyName: string
+  estimateNumber: string
+  items: CartItem[]
+  totals: QuoteTotals
+}
+
+/**
+ * Sends the `wineyard_estimate` WABA template with line items and a deep link button.
+ * Falls back to sendQuotation (plain text) if the template call fails.
+ *
+ * Template parameters:
+ *   {{1}} = Customer name + company + formatted line items
+ *   {{2}} = Estimate number (EST-XXXXX)
+ *   {{3}} = Total amount (formatted)
+ *   {{4}} = Number of items
+ *
+ * Button (index 0): "Review in App" URL button — dynamic suffix is the deep link path.
+ */
+export async function sendEstimateNotification(
+  to: string,
+  data: EstimateTemplateData,
+  deepLinkPath: string  // e.g. "cart?estimate_id=<uuid>"
+): Promise<WaSendResult> {
+  const fmt = (n: number) =>
+    `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+  const lineItemsText =
+    `${data.customerName}\n${data.companyName}\n` +
+    data.items
+      .map((item) => {
+        const name = item.item_name.length > 40 ? item.item_name.slice(0, 37) + '...' : item.item_name
+        return `${name} (Qty: ${item.quantity}) - ${fmt(item.line_total)}`
+      })
+      .join('\n')
+
+  try {
+    const messageId = await callWhatsAppApi({
+      to,
+      type: 'template',
+      template: {
+        name: 'wineyard_estimate',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: lineItemsText },
+              { type: 'text', text: data.estimateNumber },
+              { type: 'text', text: fmt(data.totals.total) },
+              { type: 'text', text: String(data.items.length) },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: deepLinkPath }],
+          },
+        ],
+      },
+    })
+    return { success: true, messageId }
+  } catch (templateErr) {
+    console.warn('[whatsapp] template send failed, falling back to plain text:', templateErr)
+    return sendQuotation(to, data.estimateNumber, data.items, data.totals)
+  }
+}
+
+export interface OrderTemplateData {
+  customerName: string
+  companyName: string
+  salesorderNumber: string
+  items: CartItem[]
+  totals: QuoteTotals
+}
+
+/**
+ * Sends the `wineyard_order` WABA template to confirm a placed order.
+ * Falls back to plain text if the template call fails.
+ *
+ * Template parameters:
+ *   {{1}} = Customer name + company + formatted line items
+ *   {{2}} = Sales order number (SO-XXXXX)
+ *   {{3}} = Total amount (formatted)
+ *   {{4}} = Number of items
+ *
+ * Button (index 0): "View My Orders" URL button — dynamic suffix is the orders path.
+ */
+export async function sendOrderConfirmation(
+  to: string,
+  data: OrderTemplateData,
+  ordersPath: string  // e.g. "catalog/orders"
+): Promise<WaSendResult> {
+  const fmt = (n: number) =>
+    `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+  const lineItemsText =
+    `${data.customerName}\n${data.companyName}\n` +
+    data.items
+      .map((item) => {
+        const name = item.item_name.length > 40 ? item.item_name.slice(0, 37) + '...' : item.item_name
+        return `${name} (Qty: ${item.quantity}) - ${fmt(item.line_total)}`
+      })
+      .join('\n')
+
+  try {
+    const messageId = await callWhatsAppApi({
+      to,
+      type: 'template',
+      template: {
+        name: 'wineyard_order',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', text: lineItemsText },
+              { type: 'text', text: data.salesorderNumber },
+              { type: 'text', text: fmt(data.totals.total) },
+              { type: 'text', text: String(data.items.length) },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: ordersPath }],
+          },
+        ],
+      },
+    })
+    return { success: true, messageId }
+  } catch (templateErr) {
+    console.warn('[whatsapp] order template failed, falling back to plain text:', templateErr)
+
+    const lineRows = data.items
+      .map((item) => `${item.item_name} × ${item.quantity}   ${fmt(item.line_total)}`)
+      .join('\n')
+
+    const message =
+      `✅ *WineYard Order Confirmed #${data.salesorderNumber}*\n` +
+      `─────────────────────────────\n` +
+      `${lineRows}\n` +
+      `─────────────────────────────\n` +
+      `Subtotal:   ${fmt(data.totals.subtotal)}\n` +
+      `GST (18%):  ${fmt(data.totals.tax)}\n` +
+      `*Total:     ${fmt(data.totals.total)}*\n` +
+      `─────────────────────────────\n` +
+      `Our team will contact you in the next 1 hour for delivery details.`
+
+    try {
+      const messageId = await sendText(to, message)
+      return { success: true, messageId }
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+}
+
+/**
+ * Sends a plain text alert to the admin WhatsApp number.
+ * Best-effort — never throws, never blocks the main flow.
+ */
+export async function sendAdminAlert(message: string): Promise<void> {
+  const adminNumber = process.env.WHATSAPP_ADMIN_NUMBER
+  if (!adminNumber) {
+    console.warn('[whatsapp] WHATSAPP_ADMIN_NUMBER not set — skipping admin alert')
+    return
+  }
+  try {
+    await sendText(adminNumber, message)
+  } catch (err) {
+    console.error('[whatsapp] admin alert failed:', err)
+  }
 }

@@ -1,5 +1,5 @@
 import { createServiceClient } from './supabase/server'
-import type { ZohoContact, ZohoEstimateResponse } from '@/types/zoho'
+import type { ZohoContact, ZohoEstimateResponse, ZohoSalesOrderResponse } from '@/types/zoho'
 import type { CartItem } from '@/types/catalog'
 
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
@@ -155,4 +155,69 @@ export async function createEstimate(
   }
 
   return res.json()
+}
+
+/**
+ * Creates a Sales Order in Zoho Books.
+ * When converting from an estimate, pass estimateNumber as reference_number
+ * to maintain traceability. Call markEstimateAccepted separately to update
+ * the estimate's status in Zoho.
+ */
+export async function createSalesOrder(
+  contactId: string,
+  lineItems: CartItem[],
+  options?: { estimateNumber?: string; notes?: string }
+): Promise<ZohoSalesOrderResponse> {
+  const token = await getAccessToken()
+  const orgId = process.env.ZOHO_ORG_ID!
+
+  const body = {
+    customer_id: contactId,
+    line_items: lineItems.map((item) => ({
+      item_id: item.zoho_item_id,
+      name: item.item_name,
+      quantity: item.quantity,
+      rate: item.rate,
+    })),
+    ...(options?.estimateNumber ? { reference_number: options.estimateNumber } : {}),
+    ...(options?.notes ? { notes: options.notes } : {}),
+  }
+
+  const res = await fetch(`${ZOHO_API_BASE}/salesorders?organization_id=${orgId}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Zoho-oauthtoken ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Zoho create sales order failed: ${res.status} — ${errText}`)
+  }
+
+  return res.json()
+}
+
+/**
+ * Marks a Zoho estimate as "accepted" after a sales order has been placed.
+ * This is a best-effort call — failure here does not block the order flow.
+ */
+export async function markEstimateAccepted(zohoEstimateId: string): Promise<void> {
+  const token = await getAccessToken()
+  const orgId = process.env.ZOHO_ORG_ID!
+
+  const res = await fetch(
+    `${ZOHO_API_BASE}/estimates/${zohoEstimateId}/status/accepted?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    }
+  )
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Zoho mark estimate accepted failed: ${res.status} — ${errText}`)
+  }
 }

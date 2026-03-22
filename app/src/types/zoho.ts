@@ -113,3 +113,26 @@ export interface ZohoEstimateResponse {
     total: number;
   };
 }
+
+export interface ZohoSalesOrderCreate {
+  customer_id: string;
+  line_items: Array<{
+    item_id: string;
+    name: string;
+    quantity: number;
+    rate: number;
+  }>;
+  reference_number?: string;
+  notes?: string;
+}
+
+export interface ZohoSalesOrderResponse {
+  code: number;
+  message: string;
+  salesorder: {
+    salesorder_id: string;
+    salesorder_number: string;
+    status: string;
+    total: number;
+  };
+}
