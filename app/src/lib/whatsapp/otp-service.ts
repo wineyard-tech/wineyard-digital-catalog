@@ -46,18 +46,21 @@ async function postMessage(payload: Record<string, unknown>): Promise<string> {
 
 /**
  * Sends OTP via a pre-approved AUTHENTICATION category template.
- * Template body: "Your WineYard login OTP is {{1}}. Valid for 10 minutes."
- * Returns Meta message ID on success.
+ * Falls back to a plain-text WhatsApp message if the template fails
+ * (e.g. template not found, paused, or unapproved in sandbox).
+ *
+ * Text fallback works as long as the user has messaged the WABA number
+ * within the last 24 h — safe for OTP flows since the user is actively logging in.
  */
 export async function sendOTP(
   phoneNumber: string,
   otpCode: string,
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    const { templateName } = getConfig()
-    // Strip leading + for Meta API — it expects digits only
-    const to = phoneNumber.replace(/^\+/, '')
+): Promise<{ success: boolean; messageId?: string; error?: string; via?: 'template' | 'text' }> {
+  const { templateName } = getConfig()
+  const to = phoneNumber.replace(/^\+/, '') // Meta API expects digits only
 
+  // ── Attempt 1: approved AUTHENTICATION template ───────────────────────────
+  try {
     const messageId = await postMessage({
       to,
       type: 'template',
@@ -70,7 +73,7 @@ export async function sendOTP(
             parameters: [{ type: 'text', text: otpCode }],
           },
           {
-            // AUTHENTICATION templates have a copy-code button
+            // AUTHENTICATION templates include a copy-code button
             type: 'button',
             sub_type: 'url',
             index: '0',
@@ -79,11 +82,30 @@ export async function sendOTP(
         ],
       },
     })
+    return { success: true, messageId, via: 'template' }
+  } catch (templateErr) {
+    const templateError = templateErr instanceof Error ? templateErr.message : String(templateErr)
+    console.warn('[whatsapp/otp-service] Template send failed, trying text fallback:', templateError)
+  }
 
-    return { success: true, messageId }
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err)
-    console.error('[whatsapp/otp-service] sendOTP failed:', error)
+  // ── Attempt 2: plain-text fallback ───────────────────────────────────────
+  try {
+    const expiryMins = process.env.OTP_EXPIRY_MINUTES ?? '10'
+    const messageId = await postMessage({
+      to,
+      type: 'text',
+      text: {
+        preview_url: false,
+        body:
+          `Your WineYard login OTP is *${otpCode}*. ` +
+          `Valid for ${expiryMins} minutes. Do not share this code with anyone.`,
+      },
+    })
+    console.info('[whatsapp/otp-service] OTP sent via text fallback (template unavailable)')
+    return { success: true, messageId, via: 'text' }
+  } catch (textErr) {
+    const error = textErr instanceof Error ? textErr.message : String(textErr)
+    console.error('[whatsapp/otp-service] Both template and text fallback failed:', error)
     return { success: false, error }
   }
 }
