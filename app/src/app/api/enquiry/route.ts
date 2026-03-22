@@ -1,10 +1,27 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
+import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { createEstimate } from '@/lib/zoho'
-import { sendQuotation } from '@/lib/whatsapp'
+import { sendEstimateNotification, sendAdminAlert } from '@/lib/whatsapp'
 import type { EnquiryRequest, CartItem } from '@/types/catalog'
+
+/** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
+function buildCartHash(items: CartItem[]): string {
+  const sorted = [...items].sort((a, b) => a.zoho_item_id.localeCompare(b.zoho_item_id))
+  return createHash('sha256').update(JSON.stringify(sorted)).digest('hex')
+}
+
+/** Retries `fn` once after `delayMs` if it throws. */
+async function withOneRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T> {
+  try {
+    return await fn()
+  } catch {
+    await new Promise((r) => setTimeout(r, delayMs))
+    return fn()
+  }
+}
 
 export async function POST(request: NextRequest) {
   // ── Auth — guests cannot enquire ─────────────────────────────────────────
@@ -18,7 +35,7 @@ export async function POST(request: NextRequest) {
     throw err
   }
 
-  // ── Parse request body ────────────────────────────────────────────────────
+  // ── Parse + validate request body ────────────────────────────────────────
   let body: EnquiryRequest
   try {
     body = await request.json()
@@ -30,27 +47,78 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Cart is empty' }, { status: 400 })
   }
 
-  // ── Calculate totals ──────────────────────────────────────────────────────
+  // ── Compute totals + cart hash ────────────────────────────────────────────
   const subtotal = body.items.reduce((sum: number, item: CartItem) => sum + item.line_total, 0)
   const tax = Math.round(subtotal * 0.18 * 100) / 100
   const total = Math.round((subtotal + tax) * 100) / 100
+  const cartHash = buildCartHash(body.items)
 
   const supabase = createServiceClient()
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
-  // ── Insert draft estimate ─────────────────────────────────────────────────
+  // ── Duplicate detection: same cart within last 24 hours ───────────────────
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data: existing } = await supabase
+    .from('estimates')
+    .select('id, public_id, estimate_number, zoho_sync_status, app_whatsapp_sent, line_items')
+    .eq('zoho_contact_id', session.zoho_contact_id)
+    .eq('cart_hash', cartHash)
+    .neq('zoho_sync_status', 'failed')
+    .gt('created_at', cutoff)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existing) {
+    // Re-send WhatsApp if not already sent for this estimate
+    let whatsappSent = existing.app_whatsapp_sent
+    if (!whatsappSent) {
+      const deepLinkPath = `cart?estimate_id=${existing.public_id}`
+      const waResult = await sendEstimateNotification(
+        session.phone,
+        {
+          customerName: session.contact_name,
+          companyName: session.contact_name,
+          estimateNumber: existing.estimate_number,
+          items: existing.line_items as CartItem[],
+          totals: { subtotal, tax, total },
+        },
+        deepLinkPath
+      )
+      if (waResult.success) {
+        await supabase
+          .from('estimates')
+          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+          .eq('id', existing.id)
+        whatsappSent = true
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      estimate_number: existing.estimate_number,
+      estimate_id: existing.public_id,
+      whatsapp_sent: whatsappSent,
+      sync_pending: existing.zoho_sync_status === 'pending_zoho_sync',
+    })
+  }
+
+  // ── Insert draft estimate (Supabase first — enables retry capability) ─────
   const { data: estimate, error: insertError } = await supabase
     .from('estimates')
     .insert({
       zoho_contact_id: session.zoho_contact_id,
       contact_phone: session.phone,
       status: 'draft',
+      zoho_sync_status: 'pending_zoho_sync',
+      cart_hash: cartHash,
       line_items: body.items,
       subtotal,
       tax_total: tax,
       total,
       notes: body.notes ?? null,
     })
-    .select('id, estimate_number')
+    .select('id, public_id, estimate_number')
     .single()
 
   if (insertError || !estimate) {
@@ -58,53 +126,81 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create estimate' }, { status: 500 })
   }
 
-  // ── Create estimate in Zoho Books ─────────────────────────────────────────
-  let zohoEstimateId: string | null = null
-  let whatsappSent = false
+  // ── Create estimate in Zoho Books (1 retry on failure) ────────────────────
+  let zohoSyncStatus: 'sent' | 'pending_zoho_sync' = 'pending_zoho_sync'
+  let zohoSyncError: string | null = null
 
   try {
-    const zohoRes = await createEstimate(
-      session.zoho_contact_id,
-      body.items,
-      body.notes
+    const zohoRes = await withOneRetry(() =>
+      createEstimate(session.zoho_contact_id, body.items, body.notes)
     )
-
-    zohoEstimateId = zohoRes.estimate?.estimate_id ?? null
 
     await supabase
       .from('estimates')
       .update({
-        zoho_estimate_id: zohoEstimateId,
+        zoho_estimate_id: zohoRes.estimate?.estimate_id ?? null,
         status: 'sent',
+        zoho_sync_status: 'sent',
+        zoho_sync_attempts: 1,
       })
       .eq('id', estimate.id)
-  } catch (err) {
-    console.error('[enquiry] Zoho estimate creation failed:', err)
-    // Continue — local estimate is saved; Zoho sync can retry
-  }
 
-  // ── Send WhatsApp quotation ───────────────────────────────────────────────
-  try {
-    await sendQuotation(session.phone, estimate.estimate_number, body.items, {
-      subtotal,
-      tax,
-      total,
-    })
+    zohoSyncStatus = 'sent'
+  } catch (err) {
+    zohoSyncError = err instanceof Error ? err.message : String(err)
+    console.error('[enquiry] Zoho estimate creation failed after retry:', zohoSyncError)
 
     await supabase
       .from('estimates')
-      .update({ whatsapp_sent: true, whatsapp_sent_at: new Date().toISOString() })
+      .update({
+        zoho_sync_attempts: 1,
+        zoho_sync_error: zohoSyncError,
+      })
       .eq('id', estimate.id)
 
-    whatsappSent = true
-  } catch (err) {
-    console.error('[enquiry] WhatsApp send failed:', err)
-    // Non-fatal — estimate is still created
+    // Notify admin of the sync failure
+    void sendAdminAlert(
+      `⚠️ Zoho sync failed for estimate ${estimate.estimate_number}\n` +
+      `Contact: ${session.contact_name} (${session.phone})\n` +
+      `Error: ${zohoSyncError}\n` +
+      `Estimate ID: ${estimate.public_id}`
+    )
+  }
+
+  // ── Send WhatsApp notification (always — regardless of Zoho sync status) ──
+  const deepLinkPath = `cart?estimate_id=${estimate.public_id}`
+  const waResult = await sendEstimateNotification(
+    session.phone,
+    {
+      customerName: session.contact_name,
+      companyName: '',
+      estimateNumber: estimate.estimate_number,
+      items: body.items,
+      totals: { subtotal, tax, total },
+    },
+    deepLinkPath
+  )
+
+  if (waResult.success) {
+    await supabase
+      .from('estimates')
+      .update({
+        app_whatsapp_sent: true,
+        app_whatsapp_message_id: waResult.messageId ?? null,
+        // Also set legacy field for backwards-compat
+        whatsapp_sent: true,
+        whatsapp_sent_at: new Date().toISOString(),
+      })
+      .eq('id', estimate.id)
+  } else {
+    console.error('[enquiry] WhatsApp send failed:', waResult.error)
   }
 
   return NextResponse.json({
     success: true,
     estimate_number: estimate.estimate_number,
-    whatsapp_sent: whatsappSent,
+    estimate_id: estimate.public_id as string,
+    whatsapp_sent: waResult.success,
+    ...(zohoSyncStatus === 'pending_zoho_sync' ? { sync_pending: true } : {}),
   })
 }
