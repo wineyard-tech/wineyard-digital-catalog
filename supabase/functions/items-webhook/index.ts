@@ -5,8 +5,8 @@
 // (sync-items) by keeping the catalog current within seconds of changes.
 //
 // Event routing (single endpoint, all event types):
-//   item_created | item_updated  →  handleUpsert()
-//   item_deleted                 →  handleDelete()
+//   item_created | item_updated  →  handleUpsert()  (UPSERT item + locations)
+//   item_deleted                 →  handleDelete()  (soft-delete: status='inactive', never hard-delete)
 //
 // Always returns HTTP 200 — even on processing errors — to prevent Zoho
 // from re-delivering the same webhook endlessly. Failures are logged to
@@ -262,7 +262,7 @@ async function handleUpsert(
   console.log(`[items-webhook] ${eventType} OK — item_id=${itemId}, warehouses=${locationRows.length}`)
 }
 
-// ── Delete handler ────────────────────────────────────────────────────────────
+// ── Delete handler (soft-delete) ─────────────────────────────────────────────
 
 async function handleDelete(
   supabase: SupabaseClient,
@@ -272,23 +272,37 @@ async function handleDelete(
   const itemId = item.item_id
   if (!itemId) throw new Error('Missing item_id in delete payload')
 
-  // CASCADE on item_locations means child rows are auto-deleted when the item row goes.
-  const { error } = await supabase
+  // Soft-delete: mark item inactive rather than hard-deleting.
+  // Preserves pricebook rows, order line items, and any other FKs that
+  // reference this item. Hard-delete would cascade-destroy sales history.
+  const { error: itemErr } = await supabase
     .from('items')
-    .delete()
+    .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_item_id', itemId)
 
-  if (error) {
+  if (itemErr) {
     await logError(supabase, {
       event_type: 'deleted',
       zoho_entity_id: itemId,
-      error_message: `Delete failed: ${error.message}`,
+      error_message: `Soft-delete failed: ${itemErr.message}`,
       payload: rawPayload,
     })
-    throw error
+    throw itemErr
   }
 
-  console.log(`[items-webhook] deleted OK — item_id=${itemId}`)
+  // Deactivate all warehouse location rows for this item.
+  // location_status is the per-location field (mirrors Zoho's warehouse status field).
+  const { error: locErr } = await supabase
+    .from('item_locations')
+    .update({ location_status: 'inactive', updated_at: new Date().toISOString() })
+    .eq('zoho_item_id', itemId)
+
+  if (locErr) {
+    // Non-fatal: item is already deactivated; log and continue.
+    console.warn(`[items-webhook] item_locations deactivate-on-delete warning (${itemId}):`, locErr.message)
+  }
+
+  console.log(`[items-webhook] soft-deleted OK — item_id=${itemId}`)
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────

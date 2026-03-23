@@ -1,5 +1,5 @@
 import { createServiceClient } from './supabase/server'
-import type { ZohoContact, ZohoEstimateResponse } from '@/types/zoho'
+import type { ZohoContact, ZohoEstimateResponse, ZohoSalesOrderResponse } from '@/types/zoho'
 import type { CartItem } from '@/types/catalog'
 
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
@@ -119,7 +119,11 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
 
 /**
  * Creates an estimate in Zoho Books.
- * Called by the enquiry route after inserting a draft estimate locally.
+ *
+ * Pricing strategy: Zoho Estimates API does not accept a pricebook_id at the
+ * document level, so we send rate explicitly per line item. CartItem.rate is
+ * already pricebook-resolved by the catalog (pricebook_rate ?? base_rate),
+ * so this correctly honours per-contact pricing without a separate lookup.
  */
 export async function createEstimate(
   contactId: string,
@@ -135,7 +139,7 @@ export async function createEstimate(
       item_id: item.zoho_item_id,
       name: item.item_name,
       quantity: item.quantity,
-      rate: item.rate,
+      rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
     })),
     ...(notes ? { notes } : {}),
   }
@@ -155,4 +159,82 @@ export async function createEstimate(
   }
 
   return res.json()
+}
+
+/**
+ * Creates a Sales Order in Zoho Books.
+ *
+ * Pricing strategy: Sales Orders support pricebook_id at the document level.
+ * When the contact has a pricebook, we pass it and omit rate from line items —
+ * Zoho auto-resolves the correct pricebook price per item.
+ * When there is no pricebook, we send rate explicitly (CartItem.rate = base_rate).
+ *
+ * When converting from an estimate, pass estimateNumber as reference_number
+ * to maintain traceability. Call markEstimateAccepted separately to update
+ * the estimate's status in Zoho.
+ */
+export async function createSalesOrder(
+  contactId: string,
+  lineItems: CartItem[],
+  options?: { pricebookId?: string | null; estimateNumber?: string; notes?: string }
+): Promise<ZohoSalesOrderResponse> {
+  const token = await getAccessToken()
+  const orgId = process.env.ZOHO_ORG_ID!
+
+  const hasPricebook = Boolean(options?.pricebookId)
+
+  const body = {
+    customer_id: contactId,
+    // Pass pricebook_id so Zoho auto-applies the correct price per item.
+    // Omit when no pricebook — rate is sent explicitly instead.
+    ...(hasPricebook ? { pricebook_id: options!.pricebookId } : {}),
+    line_items: lineItems.map((item) => ({
+      item_id: item.zoho_item_id,
+      name: item.item_name,
+      quantity: item.quantity,
+      // With pricebook: omit rate — Zoho resolves from pricebook.
+      // Without pricebook: send CartItem.rate (= base_rate from catalog).
+      ...(!hasPricebook ? { rate: item.rate } : {}),
+    })),
+    ...(options?.estimateNumber ? { reference_number: options.estimateNumber } : {}),
+    ...(options?.notes ? { notes: options.notes } : {}),
+  }
+
+  const res = await fetch(`${ZOHO_API_BASE}/salesorders?organization_id=${orgId}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Zoho-oauthtoken ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Zoho create sales order failed: ${res.status} — ${errText}`)
+  }
+
+  return res.json()
+}
+
+/**
+ * Marks a Zoho estimate as "accepted" after a sales order has been placed.
+ * This is a best-effort call — failure here does not block the order flow.
+ */
+export async function markEstimateAccepted(zohoEstimateId: string): Promise<void> {
+  const token = await getAccessToken()
+  const orgId = process.env.ZOHO_ORG_ID!
+
+  const res = await fetch(
+    `${ZOHO_API_BASE}/estimates/${zohoEstimateId}/status/accepted?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    }
+  )
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Zoho mark estimate accepted failed: ${res.status} — ${errText}`)
+  }
 }

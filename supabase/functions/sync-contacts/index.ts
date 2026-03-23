@@ -1,5 +1,8 @@
 // sync-contacts Edge Function
-// Fetches all active contacts from Zoho Books and upserts into contacts + contact_persons tables.
+// Incremental sync: fetches only contacts modified since yesterday 03:55 AM IST.
+// Runs daily at 04:05 AM IST via pg_cron (5 min after sync-items to avoid Zoho rate limits).
+// The 5-minute overlap on the cutoff time prevents records modified on the exact boundary
+// from being missed.
 //
 // Phone extraction priority per contact:
 //   contact.mobile → contact.phone → billing_address.phone
@@ -10,13 +13,13 @@
 // Contacts with no resolvable phone are skipped (cannot receive OTP).
 //
 // Uses streamZohoPages (async generator) to pipeline fetch + upsert per page.
-// This avoids collecting all 7500+ contacts into memory before writing,
+// This avoids collecting all contacts into memory before writing,
 // keeping memory flat and fitting within the 150s Edge Function timeout.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getZohoToken, streamZohoPages } from '../_shared/zoho-client.ts'
-import { normalizeIndianPhone, extractPhoneFromContact } from '../_shared/phone-normalizer.ts'
+import { getZohoToken, streamZohoPages, getLastModifiedFilter } from '../_shared/zoho-client.ts'
+import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
@@ -40,10 +43,17 @@ serve(async (req) => {
 
     const token = await getZohoToken(supabase)
 
+    // Fetch only contacts modified since yesterday 03:55 AM IST (incremental sync)
+    const lastModified = getLastModifiedFilter()
+    console.log(`Fetching contacts modified since ${lastModified}`)
+
     let totalSynced = 0
     let totalSkipped = 0
     let totalPersonsSynced = 0
     let pageCount = 0
+    let lastPageSeen = 0
+    const startTime = Date.now()
+    const TIME_BUDGET = 110_000   // 110s — 40s buffer before 150s hard limit
 
     // ── Stream one page at a time: fetch → build → upsert → next page ────────
     // This pipelines network I/O with DB writes instead of collect-then-process,
@@ -53,7 +63,7 @@ serve(async (req) => {
       token,
       ORG_ID,
       'contacts',
-      { filter_by: 'Status.Active', contact_type: 'customer' }
+      { filter_by: 'Status.Active', contact_type: 'customer', last_modified_time: lastModified }
     )) {
       pageCount++
 
@@ -68,12 +78,17 @@ serve(async (req) => {
       const personRows: any[] = []
 
       for (const contact of slice) {
-        const phone = extractPhoneFromContact(contact)
+        const phoneResult = extractPhoneFromContact(contact)
 
-        if (!phone) {
-          console.warn(`Skipping "${contact.contact_name}" (${contact.contact_id}): no valid phone`)
+        if (!phoneResult) {
+          console.warn(`Skipping "${contact.contact_name}" (${contact.contact_id}): no valid phone — ${describeContactPhones(contact)}`)
           totalSkipped++
           continue
+        }
+
+        const { phone, source: phoneSource } = phoneResult
+        if (phoneSource !== 'contact.mobile' && phoneSource !== 'contact.phone') {
+          console.log(`"${contact.contact_name}" phone from ${phoneSource}: ${phone}`)
         }
 
         contactRows.push({
@@ -115,6 +130,10 @@ serve(async (req) => {
       }
 
       // ── Upsert contacts for this page ───────────────────────────────────────
+      // Track which contact_ids were actually saved so we only insert their
+      // contact_persons (avoids FK violations for skipped contacts).
+      const upsertedContactIds = new Set<string>()
+
       if (contactRows.length > 0) {
         const { error } = await supabase
           .from('contacts')
@@ -130,30 +149,53 @@ serve(async (req) => {
               console.warn(`Skipping "${row.contact_name}": ${rowErr.message}`)
               totalSkipped++
             } else {
+              upsertedContactIds.add(row.zoho_contact_id)
               totalSynced++
             }
           }
         } else {
+          contactRows.forEach(r => upsertedContactIds.add(r.zoho_contact_id))
           totalSynced += contactRows.length
         }
       }
 
       // ── Upsert contact persons for this page ────────────────────────────────
-      if (personRows.length > 0) {
-        const { error } = await supabase
+      // Only insert persons whose parent contact was actually saved to avoid FK failures.
+      const safePersonRows = personRows.filter(p => upsertedContactIds.has(p.zoho_contact_id))
+
+      if (safePersonRows.length > 0) {
+        const { error: personErr } = await supabase
           .from('contact_persons')
-          .upsert(personRows, { onConflict: 'zoho_contact_person_id' })
-        if (error) {
-          console.warn(`Contact persons p${page} warning: ${error.message}`)
+          .upsert(safePersonRows, { onConflict: 'zoho_contact_person_id' })
+
+        if (personErr) {
+          // Fallback: row-by-row to isolate the bad person without losing the rest
+          for (const row of safePersonRows) {
+            const { error: rowErr } = await supabase
+              .from('contact_persons')
+              .upsert(row, { onConflict: 'zoho_contact_person_id' })
+            if (rowErr) {
+              console.warn(`Person ${row.zoho_contact_person_id} (${row.zoho_contact_id}): ${rowErr.message}`)
+            } else {
+              totalPersonsSynced++
+            }
+          }
         } else {
-          totalPersonsSynced += personRows.length
+          totalPersonsSynced += safePersonRows.length
         }
       }
 
-      console.log(`Page ${page}: +${contactRows.length} contacts, +${personRows.length} persons (running total: ${totalSynced})`)
+      lastPageSeen = page
+      console.log(`Page ${page}: +${contactRows.length} contacts, +${safePersonRows.length} persons (running total: ${totalSynced})`)
 
       // Stop early if test_limit reached
       if (testLimit && (totalSynced + totalSkipped) >= testLimit) break
+
+      // Time-budget check — stop gracefully after current page's writes complete
+      if (hasMore && Date.now() - startTime > TIME_BUDGET) {
+        console.log(`sync-contacts: time budget reached after page ${page}`)
+        break
+      }
 
       // No more pages
       if (!hasMore) break
@@ -164,6 +206,7 @@ serve(async (req) => {
       contacts_skipped: totalSkipped,
       contact_persons_synced: totalPersonsSynced,
       pages_fetched: pageCount,
+      last_modified_since: lastModified,
       synced_at: new Date().toISOString(),
     }
 

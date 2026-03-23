@@ -43,9 +43,38 @@ export interface EnquiryRequest {
   notes?: string;
 }
 
+export interface OrderRequest {
+  items: CartItem[];
+  estimate_id?: string;
+  notes?: string;
+}
+
+export interface OrderResponse {
+  success: boolean;
+  salesorder_number: string;
+  order_id: string;
+  whatsapp_sent: boolean;
+  sync_pending?: boolean;
+  duplicate?: boolean;
+  error?: string;
+}
+
+export interface OrderListItem {
+  id: string;
+  salesorder_number: string;
+  zoho_sync_status: string;
+  status: string;
+  total: number;
+  item_count: number;
+  created_at: string;
+  estimate_number?: string | null;
+}
+
 export interface EnquiryResponse {
   success: boolean;
   estimate_number: string;
+  estimate_id: string;       // public_id UUID — used for deep links
   whatsapp_sent: boolean;
+  sync_pending?: boolean;    // true when Zoho sync failed but WhatsApp was still sent
   error?: string;
 }
