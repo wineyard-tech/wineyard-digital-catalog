@@ -143,11 +143,11 @@ export interface EstimateTemplateData {
  * Sends the `wineyard_estimate` WABA template with line items and a deep link button.
  * Falls back to sendQuotation (plain text) if the template call fails.
  *
- * Template parameters:
- *   {{1}} = Customer name + company + formatted line items
- *   {{2}} = Estimate number (EST-XXXXX)
- *   {{3}} = Total amount (formatted)
- *   {{4}} = Number of items
+ * Template parameters (positional, matching Meta template order):
+ *   {{estimate_number}} [pos 1] = Estimate number (EST-XXXXX)
+ *   {{estimate_details}} [pos 2] = Customer name + company + formatted line items
+ *   {{total_amount}}    [pos 3] = Total amount (formatted)
+ *   {{item_count}}      [pos 4] = Number of items
  *
  * Button (index 0): "Review in App" URL button — dynamic suffix is the deep link path.
  */
@@ -179,8 +179,8 @@ export async function sendEstimateNotification(
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: lineItemsText },
               { type: 'text', text: data.estimateNumber },
+              { type: 'text', text: lineItemsText },
               { type: 'text', text: fmt(data.totals.total) },
               { type: 'text', text: String(data.items.length) },
             ],
@@ -213,11 +213,11 @@ export interface OrderTemplateData {
  * Sends the `wineyard_order` WABA template to confirm a placed order.
  * Falls back to plain text if the template call fails.
  *
- * Template parameters:
- *   {{1}} = Customer name + company + formatted line items
- *   {{2}} = Sales order number (SO-XXXXX)
- *   {{3}} = Total amount (formatted)
- *   {{4}} = Number of items
+ * Template parameters (positional, matching Meta template order):
+ *   {{order_number}}  [pos 1] = Sales order number (SO-XXXXX)
+ *   {{order_details}} [pos 2] = Customer name + company + formatted line items
+ *   {{total_amount}}  [pos 3] = Total amount (formatted)
+ *   {{item_count}}    [pos 4] = Number of items
  *
  * Button (index 0): "View My Orders" URL button — dynamic suffix is the orders path.
  */
@@ -249,8 +249,8 @@ export async function sendOrderConfirmation(
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: lineItemsText },
               { type: 'text', text: data.salesorderNumber },
+              { type: 'text', text: lineItemsText },
               { type: 'text', text: fmt(data.totals.total) },
               { type: 'text', text: String(data.items.length) },
             ],
