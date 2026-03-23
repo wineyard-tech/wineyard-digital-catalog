@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, ChevronDown, X, LogOut, ClipboardList } from 'lucide-react'
+import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
@@ -208,60 +208,86 @@ export default function CatalogClient({
         </div>
       )}
 
-      {/* User bottom sheet — authenticated only */}
+      {/* Full-screen profile page — authenticated only */}
       {sheetOpen && (
-        <>
-          {/* Backdrop — z=45 sits above header(30), CartBar(39), BottomTabs(40) */}
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#F8FAFB',
+            zIndex: 50,
+            display: 'flex',
+            flexDirection: 'column',
+            maxWidth: 768,
+            margin: '0 auto',
+          }}
+        >
+          {/* Top bar */}
           <div
-            onClick={() => setSheetOpen(false)}
             style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'rgba(0,0,0,0.4)',
-              zIndex: 45,
-            }}
-          />
-          {/* Sheet — z=46 sits above backdrop */}
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 0,
-              left: 0,
-              right: 0,
-              maxWidth: 768,
-              margin: '0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '16px 16px 12px',
               background: '#fff',
-              borderRadius: '20px 20px 0 0',
-              padding: '20px 20px 36px',
-              zIndex: 46,
-              boxShadow: '0 -4px 20px rgba(0,0,0,0.12)',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
             }}
           >
-            {/* Handle + close */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div style={{ width: 40, height: 4, background: '#E2E8F0', borderRadius: 2, margin: '0 auto' }} />
-              <button
-                onClick={() => setSheetOpen(false)}
-                aria-label="Close"
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
-              >
-                <X size={20} color="#94A3B8" aria-hidden="true" />
-              </button>
-            </div>
+            <button
+              onClick={() => setSheetOpen(false)}
+              aria-label="Back to catalog"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+            >
+              <ArrowLeft size={22} color="#0F172A" aria-hidden="true" />
+            </button>
+            <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0F172A' }}>Account</h1>
+          </div>
 
-            {/* Greeting */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-              <div style={{ width: 42, height: 42, borderRadius: '50%', background: '#E6F0FA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <User size={20} color="#0066CC" aria-hidden="true" />
-              </div>
-              <div>
-                <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0F172A' }}>
-                  Hi, {contactName}
-                </p>
-                <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>Registered customer</p>
-              </div>
+          {/* Avatar + name card */}
+          <div
+            style={{
+              margin: '24px 16px 0',
+              background: '#fff',
+              borderRadius: 16,
+              padding: '20px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: '#E6F0FA',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <User size={26} color="#0066CC" aria-hidden="true" />
             </div>
+            <div>
+              <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>
+                {contactName}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>Registered customer</p>
+            </div>
+          </div>
 
+          {/* Actions card */}
+          <div
+            style={{
+              margin: '16px 16px 0',
+              background: '#fff',
+              borderRadius: 16,
+              overflow: 'hidden',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
             {/* My Orders */}
             <button
               onClick={() => { setSheetOpen(false); router.push('/catalog/orders') }}
@@ -269,8 +295,8 @@ export default function CatalogClient({
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
-                padding: '14px 0',
+                gap: 12,
+                padding: '16px',
                 background: 'none',
                 border: 'none',
                 borderBottom: '1px solid #F1F5F9',
@@ -278,9 +304,10 @@ export default function CatalogClient({
                 fontSize: 15,
                 color: '#0F172A',
                 fontWeight: 500,
+                textAlign: 'left',
               }}
             >
-              <ClipboardList size={18} color="#0066CC" aria-hidden="true" />
+              <ClipboardList size={19} color="#0066CC" aria-hidden="true" />
               My Orders
             </button>
 
@@ -292,21 +319,22 @@ export default function CatalogClient({
                 width: '100%',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 10,
-                padding: '14px 0',
+                gap: 12,
+                padding: '16px',
                 background: 'none',
                 border: 'none',
                 cursor: loggingOut ? 'not-allowed' : 'pointer',
                 fontSize: 15,
                 color: loggingOut ? '#94A3B8' : '#DC2626',
                 fontWeight: 500,
+                textAlign: 'left',
               }}
             >
-              <LogOut size={18} color={loggingOut ? '#94A3B8' : '#DC2626'} aria-hidden="true" />
+              <LogOut size={19} color={loggingOut ? '#94A3B8' : '#DC2626'} aria-hidden="true" />
               {loggingOut ? 'Logging out…' : 'Logout'}
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   )
