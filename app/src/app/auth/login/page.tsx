@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Camera } from 'lucide-react'
 import PhoneInput from '@/components/auth/PhoneInput'
 import UnregisteredMessage from '@/components/auth/UnregisteredMessage'
@@ -84,6 +85,18 @@ export default function LoginPage() {
           />
         )}
       </div>
+
+      {/* Skip login — only shown on phone entry step */}
+      {step === 'phone' && (
+        <div className="mt-5 text-center">
+          <Link
+            href="/location"
+            className="text-sm text-[#64748B] underline underline-offset-2 active:opacity-70"
+          >
+            Skip Login →
+          </Link>
+        </div>
+      )}
 
       {/* Footer note */}
       <p className="mt-6 text-xs text-[#94A3B8] text-center">
