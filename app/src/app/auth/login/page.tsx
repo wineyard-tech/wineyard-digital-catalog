@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Camera } from 'lucide-react'
@@ -15,6 +15,11 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [fromCatalog, setFromCatalog] = useState(false)
+
+  useEffect(() => {
+    setFromCatalog(new URLSearchParams(window.location.search).get('from') === 'catalog')
+  }, [])
 
   async function handleSendOTP(phoneNumber: string) {
     setLoading(true)
@@ -86,15 +91,24 @@ export default function LoginPage() {
         )}
       </div>
 
-      {/* Skip login — only shown on phone entry step */}
+      {/* Context-aware bottom link */}
       {step === 'phone' && (
         <div className="mt-5 text-center">
-          <Link
-            href="/location"
-            className="text-sm text-[#64748B] underline underline-offset-2 active:opacity-70"
-          >
-            Skip Login →
-          </Link>
+          {fromCatalog ? (
+            <Link
+              href="/catalog?mode=browse"
+              className="text-sm text-[#64748B] underline underline-offset-2 active:opacity-70"
+            >
+              ← Back to Catalog
+            </Link>
+          ) : (
+            <Link
+              href="/location"
+              className="text-sm text-[#64748B] underline underline-offset-2 active:opacity-70"
+            >
+              Skip Login →
+            </Link>
+          )}
         </div>
       )}
 

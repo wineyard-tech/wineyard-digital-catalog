@@ -77,6 +77,7 @@ export default function LocationPage() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
+    mountedRef.current = true   // Reset on each mount — guards against React Strict Mode double-invoke
     setSavedLocation(readLocationCookie())
     searchInputRef.current?.focus()
     return () => {
@@ -109,7 +110,7 @@ export default function LocationPage() {
         try {
           const res = await fetch(
             `https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`,
-            { headers: { 'User-Agent': 'wineyard-catalog/1.0' } }
+            {}
           )
           if (!res.ok) throw new Error('Nominatim failed')
           const data = (await res.json()) as NominatimResult
@@ -144,7 +145,7 @@ export default function LocationPage() {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&countrycodes=in&format=json&limit=6&addressdetails=1`,
-        { headers: { 'User-Agent': 'wineyard-catalog/1.0' } }
+        {}
       )
       if (!res.ok) throw new Error()
       const data = (await res.json()) as NominatimResult[]

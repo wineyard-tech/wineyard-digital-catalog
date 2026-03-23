@@ -168,7 +168,7 @@ export default function CatalogClient({
                 if (contactName) {
                   setSheetOpen(true)
                 } else {
-                  router.push('/auth/login')
+                  router.push('/auth/login?from=catalog')
                 }
               }}
               aria-label={contactName ? `Hi, ${contactName}` : 'Login'}
