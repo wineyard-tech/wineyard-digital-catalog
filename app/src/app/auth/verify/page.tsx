@@ -30,8 +30,14 @@ function VerifyContent() {
     }
 
     if (res.ok && data.success) {
-      router.replace('/catalog')
+      router.replace('/location')
       return
+    }
+
+    // OTP expired: no attemptsLeft in response → treat as locked (0 attempts) so
+    // OTPInput shows the error message + Resend button immediately
+    if (typeof data.attemptsLeft === 'undefined' && data.error?.toLowerCase().includes('expired')) {
+      return { attemptsLeft: 0, error: 'Your OTP has expired. Tap Resend below to get a new one.' }
     }
 
     return { attemptsLeft: data.attemptsLeft, error: data.error }
