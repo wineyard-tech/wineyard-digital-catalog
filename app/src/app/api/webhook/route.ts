@@ -49,7 +49,10 @@ async function processWebhookPayload(rawBody: string): Promise<void> {
   // Only process inbound text messages
   if (!message || message.type !== 'text') return
 
-  const phone: string = message.from // e.g. "919876543210"
+  // WhatsApp sends phone without '+' (e.g. "919876543210").
+  // Contacts table stores with '+' prefix — normalise to match.
+  const rawPhone: string = message.from
+  const phone: string = rawPhone.startsWith('+') ? rawPhone : `+${rawPhone}`
   const senderName: string = contactProfile?.profile?.name ?? 'there'
   const supabase = createServiceClient()
 

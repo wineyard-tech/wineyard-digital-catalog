@@ -93,14 +93,42 @@ export async function POST(request: NextRequest) {
     estimateRow = data
   }
 
-  // ── Insert sales order in Supabase first (Zoho sync comes after) ──────────
+  // ── Create sales order in Zoho Books first (Zoho owns the number) ────────
+  let zohoSalesorderId: string
+  let zohoSalesorderNumber: string
+
+  try {
+    const zohoRes = await withOneRetry(() =>
+      createSalesOrder(session.zoho_contact_id, body.items, {
+        pricebookId: session.pricebook_id,
+        estimateNumber: estimateRow?.estimate_number,
+        notes: body.notes,
+      })
+    )
+    zohoSalesorderId = zohoRes.salesorder.salesorder_id
+    zohoSalesorderNumber = zohoRes.salesorder.salesorder_number
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[orders] Zoho SO creation failed:', msg)
+    void sendAdminAlert(
+      `⚠️ Zoho sales order creation failed\n` +
+      `Contact: ${session.contact_name} (${session.phone})\n` +
+      `Error: ${msg}`
+    )
+    return NextResponse.json({ error: 'Failed to place order. Please try again.' }, { status: 502 })
+  }
+
+  // ── Persist to Supabase with Zoho's canonical number and ID ──────────────
   const { data: order, error: insertError } = await supabase
     .from('sales_orders')
     .insert({
       zoho_contact_id: session.zoho_contact_id,
       contact_phone: session.phone,
-      status: 'draft',
-      zoho_sync_status: 'pending_zoho_sync',
+      salesorder_number: zohoSalesorderNumber,
+      zoho_salesorder_id: zohoSalesorderId,
+      status: 'confirmed',
+      zoho_sync_status: 'sent',
+      zoho_sync_attempts: 1,
       cart_hash: cartHash,
       line_items: body.items,
       subtotal,
@@ -109,74 +137,38 @@ export async function POST(request: NextRequest) {
       notes: body.notes ?? null,
       converted_from_estimate_id: estimateRow?.id ?? null,
     })
-    .select('id, public_id, salesorder_number')
+    .select('id, public_id')
     .single()
 
   if (insertError || !order) {
     console.error('[orders] sales_order insert error:', insertError)
-    return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
-  }
-
-  // ── Create sales order in Zoho Books (1 retry) ────────────────────────────
-  let zohoSyncStatus: 'sent' | 'pending_zoho_sync' = 'pending_zoho_sync'
-  let zohoSyncError: string | null = null
-
-  try {
-    const zohoRes = await withOneRetry(() =>
-      createSalesOrder(session.zoho_contact_id, body.items, {
-        estimateNumber: estimateRow?.estimate_number,
-        notes: body.notes,
-      })
-    )
-
-    await supabase
-      .from('sales_orders')
-      .update({
-        zoho_salesorder_id: zohoRes.salesorder?.salesorder_id ?? null,
-        status: 'confirmed',
-        zoho_sync_status: 'sent',
-        zoho_sync_attempts: 1,
-      })
-      .eq('id', order.id)
-
-    zohoSyncStatus = 'sent'
-
-    // Mark originating estimate as accepted in Zoho (best-effort, non-blocking)
-    if (estimateRow?.zoho_estimate_id) {
-      markEstimateAccepted(estimateRow.zoho_estimate_id).catch((err) =>
-        console.warn('[orders] markEstimateAccepted failed (non-fatal):', err)
-      )
-      // Update estimate status in Supabase
-      supabase
-        .from('estimates')
-        .update({ status: 'accepted', zoho_sync_status: 'sent' })
-        .eq('id', estimateRow.id)
-        .then(() => {})
-    }
-  } catch (err) {
-    zohoSyncError = err instanceof Error ? err.message : String(err)
-    console.error('[orders] Zoho SO creation failed after retry:', zohoSyncError)
-
-    await supabase
-      .from('sales_orders')
-      .update({ zoho_sync_attempts: 1, zoho_sync_error: zohoSyncError })
-      .eq('id', order.id)
-
     void sendAdminAlert(
-      `⚠️ Zoho SO sync failed for order ${order.salesorder_number}\n` +
+      `⚠️ Zoho SO ${zohoSalesorderNumber} created but Supabase insert failed\n` +
       `Contact: ${session.contact_name} (${session.phone})\n` +
-      `Error: ${zohoSyncError}\n` +
-      `Order ID: ${order.public_id}`
+      `Zoho ID: ${zohoSalesorderId}`
     )
+    return NextResponse.json({ error: 'Failed to save order' }, { status: 500 })
   }
 
-  // ── Send WhatsApp order confirmation (always) ─────────────────────────────
+  // ── Mark originating estimate as accepted (best-effort, non-blocking) ─────
+  if (estimateRow?.zoho_estimate_id) {
+    markEstimateAccepted(estimateRow.zoho_estimate_id).catch((err) =>
+      console.warn('[orders] markEstimateAccepted failed (non-fatal):', err)
+    )
+    supabase
+      .from('estimates')
+      .update({ status: 'accepted', zoho_sync_status: 'sent' })
+      .eq('id', estimateRow.id)
+      .then(() => {})
+  }
+
+  // ── Send WhatsApp order confirmation ──────────────────────────────────────
   const waResult = await sendOrderConfirmation(
     session.phone,
     {
       customerName: session.contact_name,
       companyName: session.contact_name,
-      salesorderNumber: order.salesorder_number,
+      salesorderNumber: zohoSalesorderNumber,
       items: body.items,
       totals: { subtotal, tax, total },
     },
@@ -197,10 +189,9 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    salesorder_number: order.salesorder_number,
+    salesorder_number: zohoSalesorderNumber,
     order_id: order.public_id as string,
     whatsapp_sent: waResult.success,
-    ...(zohoSyncStatus === 'pending_zoho_sync' ? { sync_pending: true } : {}),
   })
 }
 

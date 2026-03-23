@@ -103,14 +103,38 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // ── Insert draft estimate (Supabase first — enables retry capability) ─────
+  // ── Create estimate in Zoho Books first (Zoho owns the number) ───────────
+  let zohoEstimateId: string
+  let zohoEstimateNumber: string
+
+  try {
+    const zohoRes = await withOneRetry(() =>
+      createEstimate(session.zoho_contact_id, body.items, body.notes)
+    )
+    zohoEstimateId = zohoRes.estimate.estimate_id
+    zohoEstimateNumber = zohoRes.estimate.estimate_number
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('[enquiry] Zoho estimate creation failed:', msg)
+    void sendAdminAlert(
+      `⚠️ Zoho estimate creation failed\n` +
+      `Contact: ${session.contact_name} (${session.phone})\n` +
+      `Error: ${msg}`
+    )
+    return NextResponse.json({ error: 'Failed to create estimate. Please try again.' }, { status: 502 })
+  }
+
+  // ── Persist to Supabase with Zoho's canonical number and ID ──────────────
   const { data: estimate, error: insertError } = await supabase
     .from('estimates')
     .insert({
       zoho_contact_id: session.zoho_contact_id,
       contact_phone: session.phone,
-      status: 'draft',
-      zoho_sync_status: 'pending_zoho_sync',
+      estimate_number: zohoEstimateNumber,
+      zoho_estimate_id: zohoEstimateId,
+      status: 'sent',
+      zoho_sync_status: 'sent',
+      zoho_sync_attempts: 1,
       cart_hash: cartHash,
       line_items: body.items,
       subtotal,
@@ -118,63 +142,28 @@ export async function POST(request: NextRequest) {
       total,
       notes: body.notes ?? null,
     })
-    .select('id, public_id, estimate_number')
+    .select('id, public_id')
     .single()
 
   if (insertError || !estimate) {
     console.error('[enquiry] estimate insert error:', insertError)
-    return NextResponse.json({ error: 'Failed to create estimate' }, { status: 500 })
-  }
-
-  // ── Create estimate in Zoho Books (1 retry on failure) ────────────────────
-  let zohoSyncStatus: 'sent' | 'pending_zoho_sync' = 'pending_zoho_sync'
-  let zohoSyncError: string | null = null
-
-  try {
-    const zohoRes = await withOneRetry(() =>
-      createEstimate(session.zoho_contact_id, body.items, body.notes)
-    )
-
-    await supabase
-      .from('estimates')
-      .update({
-        zoho_estimate_id: zohoRes.estimate?.estimate_id ?? null,
-        status: 'sent',
-        zoho_sync_status: 'sent',
-        zoho_sync_attempts: 1,
-      })
-      .eq('id', estimate.id)
-
-    zohoSyncStatus = 'sent'
-  } catch (err) {
-    zohoSyncError = err instanceof Error ? err.message : String(err)
-    console.error('[enquiry] Zoho estimate creation failed after retry:', zohoSyncError)
-
-    await supabase
-      .from('estimates')
-      .update({
-        zoho_sync_attempts: 1,
-        zoho_sync_error: zohoSyncError,
-      })
-      .eq('id', estimate.id)
-
-    // Notify admin of the sync failure
+    // Estimate exists in Zoho — alert admin so it can be reconciled
     void sendAdminAlert(
-      `⚠️ Zoho sync failed for estimate ${estimate.estimate_number}\n` +
+      `⚠️ Zoho estimate ${zohoEstimateNumber} created but Supabase insert failed\n` +
       `Contact: ${session.contact_name} (${session.phone})\n` +
-      `Error: ${zohoSyncError}\n` +
-      `Estimate ID: ${estimate.public_id}`
+      `Zoho ID: ${zohoEstimateId}`
     )
+    return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
   }
 
-  // ── Send WhatsApp notification (always — regardless of Zoho sync status) ──
+  // ── Send WhatsApp notification ─────────────────────────────────────────────
   const deepLinkPath = `cart?estimate_id=${estimate.public_id}`
   const waResult = await sendEstimateNotification(
     session.phone,
     {
       customerName: session.contact_name,
       companyName: '',
-      estimateNumber: estimate.estimate_number,
+      estimateNumber: zohoEstimateNumber,
       items: body.items,
       totals: { subtotal, tax, total },
     },
@@ -187,7 +176,6 @@ export async function POST(request: NextRequest) {
       .update({
         app_whatsapp_sent: true,
         app_whatsapp_message_id: waResult.messageId ?? null,
-        // Also set legacy field for backwards-compat
         whatsapp_sent: true,
         whatsapp_sent_at: new Date().toISOString(),
       })
@@ -198,9 +186,8 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    estimate_number: estimate.estimate_number,
+    estimate_number: zohoEstimateNumber,
     estimate_id: estimate.public_id as string,
     whatsapp_sent: waResult.success,
-    ...(zohoSyncStatus === 'pending_zoho_sync' ? { sync_pending: true } : {}),
   })
 }
