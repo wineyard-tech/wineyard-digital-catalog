@@ -44,6 +44,19 @@ export default function AuthExpiredPage() {
         </svg>
         Open WhatsApp
       </a>
+      <div style={{ marginTop: 16, textAlign: 'center' }}>
+        <a
+          href="/auth/login"
+          style={{
+            display: 'inline-block',
+            fontSize: 14,
+            color: '#6B7280',
+            textDecoration: 'underline',
+          }}
+        >
+          ← Back to Login
+        </a>
+      </div>
     </main>
   )
 }

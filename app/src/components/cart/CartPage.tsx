@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ArrowLeft, Minus, Plus, Trash2, MessageCircle } from 'lucide-react'
+import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
 import type { EnquiryResponse, OrderResponse, CartItem } from '@/types/catalog'
@@ -42,6 +42,18 @@ export default function CartPage() {
   const [authState, setAuthState] = useState<AuthState | null>(null)
   const [showRegModal, setShowRegModal] = useState(false)
   const [estimateBanner, setEstimateBanner] = useState<EstimateBanner | null>(null)
+  const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
+
+  // Read wl cookie for delivery location display
+  useEffect(() => {
+    try {
+      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
+      if (match) {
+        const data = JSON.parse(decodeURIComponent(match.slice(3)))
+        setDeliveryArea(data.area || data.city || null)
+      }
+    } catch { /* malformed cookie — ignore */ }
+  }, [])
 
   const gst = Math.round(subtotal * GST_RATE)
   const total = subtotal + gst
@@ -310,10 +322,12 @@ export default function CartPage() {
 
         {/* Delivery location */}
         <div style={{ margin: '0 16px 16px', background: '#FFFFFF', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <span style={{ fontSize: 18, lineHeight: 1 }}>📍</span>
+          <MapPin size={16} color="#0066CC" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
           <div>
-            <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>Delivery to Himayatnagar Warehouse</p>
-            <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>From WineYard Outlet, Banjara Hills</p>
+            <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>
+              Delivering to {deliveryArea ?? 'your location'}
+            </p>
+            <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>From nearest WineYard warehouse</p>
           </div>
         </div>
       </div>
