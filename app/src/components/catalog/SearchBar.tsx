@@ -23,14 +23,14 @@ export default function SearchBar({ onSearch, placeholder = 'Search products, SK
   }, [value, onSearch])
 
   return (
-    <div style={{ position: 'relative', padding: '0 12px 10px' }}>
-      {/* Search icon */}
+    <div style={{ position: 'relative', padding: '8px 12px 10px' }}>
+      {/* Search icon — vertically centred against the 40px-tall input */}
       <span
         style={{
           position: 'absolute',
           left: 24,
           top: '50%',
-          transform: 'translateY(-60%)',
+          transform: 'translateY(-50%)',
           pointerEvents: 'none',
           display: 'flex',
           alignItems: 'center',

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList } from 'lucide-react'
+import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList, MapPin } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
@@ -144,7 +144,7 @@ export default function CatalogClient({
         <div style={{ overflow: 'hidden', maxHeight: hidden ? 0 : 60, transition: 'max-height 0.3s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
             <button
-              onClick={() => router.push('/location')}
+              onClick={() => router.push('/location?from=catalog')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -158,7 +158,7 @@ export default function CatalogClient({
                 color: '#1A1A2E',
               }}
             >
-              <span>📍</span>
+              <MapPin size={15} color="#0066CC" aria-hidden="true" />
               <span>{locationArea ?? 'Set location'}</span>
               <ChevronDown size={15} color="#6B7280" />
             </button>

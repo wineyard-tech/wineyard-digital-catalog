@@ -67,6 +67,7 @@ export default function LocationPage() {
   const router = useRouter()
   const [savedLocation, setSavedLocation] = useState<LocationData | null>(null)
   const [detectState, setDetectState] = useState<DetectState>('idle')
+  const [fromCatalog, setFromCatalog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
@@ -78,6 +79,7 @@ export default function LocationPage() {
 
   useEffect(() => {
     mountedRef.current = true   // Reset on each mount — guards against React Strict Mode double-invoke
+    setFromCatalog(new URLSearchParams(window.location.search).get('from') === 'catalog')
     setSavedLocation(readLocationCookie())
     searchInputRef.current?.focus()
     return () => {
@@ -165,10 +167,10 @@ export default function LocationPage() {
       {/* Top bar */}
       <div style={{ padding: '16px 16px 0', display: 'flex', alignItems: 'center', gap: 10 }}>
         <Link
-          href="/auth/login"
+          href={fromCatalog ? '/catalog?mode=browse' : '/auth/login'}
           style={{ fontSize: 14, color: '#64748B', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
         >
-          ← Back to Login
+          {fromCatalog ? '← Back to Catalog' : '← Back to Login'}
         </Link>
       </div>
 
@@ -187,7 +189,7 @@ export default function LocationPage() {
         <Search
           size={16}
           color="#94A3B8"
-          style={{ position: 'absolute', left: 28, top: '50%', transform: 'translateY(-50%)' }}
+          style={{ position: 'absolute', left: 28, top: 24, transform: 'translateY(-50%)' }}
           aria-hidden="true"
         />
         <input
