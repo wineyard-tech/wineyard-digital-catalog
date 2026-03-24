@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
+import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, OrderResponse, CartItem } from '@/types/catalog'
 
 function fmt(n: number) {
@@ -302,6 +303,9 @@ export default function CartPage() {
             </div>
           ))}
         </div>
+
+        {/* Complete your Order — recommendations strip */}
+        <CompleteYourOrder />
 
         {/* Bill Details */}
         <div style={{ margin: '0 16px 8px', background: '#FFFFFF', borderRadius: 10, padding: '14px 16px' }}>
