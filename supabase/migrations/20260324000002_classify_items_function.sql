@@ -97,7 +97,7 @@ BEGIN
     END,
     system_type_source = 'auto',
     updated_at         = NOW()
-  WHERE items.system_type IS NULL;
+  WHERE system_type IS NULL;
 
   -- ── Step 2: Warn about universals that have a category (review candidates) ──
   --   These items matched no rule despite having a known category_name.
