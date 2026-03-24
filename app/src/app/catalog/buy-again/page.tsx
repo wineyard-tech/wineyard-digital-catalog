@@ -259,8 +259,8 @@ export default function BuyAgainPage() {
       <div style={{ marginTop: 8 }}>
         {groups.map(({ category, items }) => (
           <div key={category} style={{ marginBottom: 4 }}>
-            <div style={{ padding: '10px 16px 6px', background: '#F9FAFB' }}>
-              <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
+            <div style={{ padding: '12px 16px 4px' }}>
+              <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>
                 {category}
               </p>
             </div>
