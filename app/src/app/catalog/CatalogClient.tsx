@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { User, ChevronDown } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList, MapPin } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
@@ -23,6 +24,32 @@ export default function CatalogClient({
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const hidden = useScrollDirection()
+  const router = useRouter()
+  const [locationArea, setLocationArea] = useState<string | null>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
+
+  // Read wl cookie on mount (client-side only)
+  useEffect(() => {
+    try {
+      const match = document.cookie
+        .split(';')
+        .map(c => c.trim())
+        .find(c => c.startsWith('wl='))
+      if (match) {
+        const data = JSON.parse(decodeURIComponent(match.slice(3)))
+        setLocationArea(data.area || data.city || null)
+      }
+    } catch {
+      // cookie malformed — ignore
+    }
+  }, [])
+
+  function handleLogout() {
+    setLoggingOut(true)
+    fetch('/api/auth/logout', { method: 'POST' })
+      .finally(() => router.push('/auth/login'))
+  }
 
   // Refs used inside the stable IntersectionObserver callback — avoids stale closures
   // and prevents the observer from disconnecting/reconnecting on every loading state change.
@@ -117,6 +144,7 @@ export default function CatalogClient({
         <div style={{ overflow: 'hidden', maxHeight: hidden ? 0 : 60, transition: 'max-height 0.3s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
             <button
+              onClick={() => router.push('/location?from=catalog')}
               style={{
                 background: 'none',
                 border: 'none',
@@ -130,12 +158,19 @@ export default function CatalogClient({
                 color: '#1A1A2E',
               }}
             >
-              <span>📍</span>
-              <span>Himayatnagar Warehouse</span>
+              <MapPin size={15} color="#0066CC" aria-hidden="true" />
+              <span>{locationArea ?? 'Set location'}</span>
               <ChevronDown size={15} color="#6B7280" />
             </button>
 
             <button
+              onClick={() => {
+                if (contactName) {
+                  setSheetOpen(true)
+                } else {
+                  router.push('/auth/login?from=catalog')
+                }
+              }}
               aria-label={contactName ? `Hi, ${contactName}` : 'Login'}
               style={{
                 width: 34,
@@ -170,6 +205,135 @@ export default function CatalogClient({
       {loading && items.length > 0 && (
         <div style={{ textAlign: 'center', padding: '16px 0', color: '#6B7280', fontSize: 14 }}>
           Loading more…
+        </div>
+      )}
+
+      {/* Full-screen profile page — authenticated only */}
+      {sheetOpen && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#F8FAFB',
+            zIndex: 50,
+            display: 'flex',
+            flexDirection: 'column',
+            maxWidth: 768,
+            margin: '0 auto',
+          }}
+        >
+          {/* Top bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              padding: '16px 16px 12px',
+              background: '#fff',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
+            <button
+              onClick={() => setSheetOpen(false)}
+              aria-label="Back to catalog"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center' }}
+            >
+              <ArrowLeft size={22} color="#0F172A" aria-hidden="true" />
+            </button>
+            <h1 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0F172A' }}>Account</h1>
+          </div>
+
+          {/* Avatar + name card */}
+          <div
+            style={{
+              margin: '24px 16px 0',
+              background: '#fff',
+              borderRadius: 16,
+              padding: '20px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: '#E6F0FA',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <User size={26} color="#0066CC" aria-hidden="true" />
+            </div>
+            <div>
+              <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>
+                {contactName}
+              </p>
+              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>Registered customer</p>
+            </div>
+          </div>
+
+          {/* Actions card */}
+          <div
+            style={{
+              margin: '16px 16px 0',
+              background: '#fff',
+              borderRadius: 16,
+              overflow: 'hidden',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+            }}
+          >
+            {/* My Orders */}
+            <button
+              onClick={() => { setSheetOpen(false); router.push('/catalog/orders') }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '16px',
+                background: 'none',
+                border: 'none',
+                borderBottom: '1px solid #F1F5F9',
+                cursor: 'pointer',
+                fontSize: 15,
+                color: '#0F172A',
+                fontWeight: 500,
+                textAlign: 'left',
+              }}
+            >
+              <ClipboardList size={19} color="#0066CC" aria-hidden="true" />
+              My Orders
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '16px',
+                background: 'none',
+                border: 'none',
+                cursor: loggingOut ? 'not-allowed' : 'pointer',
+                fontSize: 15,
+                color: loggingOut ? '#94A3B8' : '#DC2626',
+                fontWeight: 500,
+                textAlign: 'left',
+              }}
+            >
+              <LogOut size={19} color={loggingOut ? '#94A3B8' : '#DC2626'} aria-hidden="true" />
+              {loggingOut ? 'Logging out…' : 'Logout'}
+            </button>
+          </div>
         </div>
       )}
     </div>

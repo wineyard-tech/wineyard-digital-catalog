@@ -54,9 +54,10 @@ export async function sendText(to: string, body: string): Promise<string | undef
 }
 
 /**
- * Sends OTP + catalog link as two separate messages.
- * Message 1: personalised greeting + catalog link
- * Message 2: OTP code with expiry notice
+ * Sends OTP + catalog link as two messages.
+ * Message 1: plain text greeting with catalog deep link (always plain text — dynamic URL).
+ * Message 2: tries `wineyard_otp` WABA template (body: {{1}} = OTP code, button: copy code).
+ *            Falls back to plain text if the template call fails.
  */
 export async function sendOtpMessage(
   to: string,
@@ -72,10 +73,34 @@ export async function sendOtpMessage(
     `Hi ${name}! Here's your WineYard catalog link:\n${catalogLink}\n\nOpen the link and enter your OTP to access your personalised pricing.`
   )
 
-  await sendText(
-    to,
-    `Your OTP is: *${otp}*\n\nValid for 10 minutes. Do not share this code with anyone.`
-  )
+  try {
+    await callWhatsAppApi({
+      to,
+      type: 'template',
+      template: {
+        name: 'wineyard_otp',
+        language: { code: 'en_IN' },
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: otp }],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: otp }],
+          },
+        ],
+      },
+    })
+  } catch {
+    // Template unavailable — fall back to plain text
+    await sendText(
+      to,
+      `Your OTP is: *${otp}*\n\nValid for 10 minutes. Do not share this code with anyone.`
+    )
+  }
 }
 
 /**
@@ -114,13 +139,13 @@ export async function sendQuotation(
 
   const message =
     `*WineYard Quotation #${estimateNumber}*\n` +
-    `─────────────────────────────\n` +
+    `──────────────────\n` +
     `${lineRows}\n` +
-    `─────────────────────────────\n` +
-    `Subtotal:   ${fmt(totals.subtotal)}\n` +
-    `GST (18%):  ${fmt(totals.tax)}\n` +
-    `*Total:     ${fmt(totals.total)}*\n` +
-    `─────────────────────────────\n` +
+    `──────────────────\n` +
+    `Subtotal:  ${fmt(totals.subtotal)}\n` +
+    `GST (18%): ${fmt(totals.tax)}\n` +
+    `*Total:    ${fmt(totals.total)}*\n` +
+    `──────────────────\n` +
     `Reply *YES* to confirm or call us.`
 
   try {
@@ -143,11 +168,11 @@ export interface EstimateTemplateData {
  * Sends the `wineyard_estimate` WABA template with line items and a deep link button.
  * Falls back to sendQuotation (plain text) if the template call fails.
  *
- * Template parameters:
- *   {{1}} = Customer name + company + formatted line items
- *   {{2}} = Estimate number (EST-XXXXX)
- *   {{3}} = Total amount (formatted)
- *   {{4}} = Number of items
+ * Template parameters (positional, matching Meta template order):
+ *   {{estimate_number}} [pos 1] = Estimate number (EST-XXXXX)
+ *   {{estimate_details}} [pos 2] = Customer name + company + formatted line items
+ *   {{total_amount}}    [pos 3] = Total amount (formatted)
+ *   {{item_count}}      [pos 4] = Number of items
  *
  * Button (index 0): "Review in App" URL button — dynamic suffix is the deep link path.
  */
@@ -174,13 +199,13 @@ export async function sendEstimateNotification(
       type: 'template',
       template: {
         name: 'wineyard_estimate',
-        language: { code: 'en' },
+        language: { code: 'en_IN' },
         components: [
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: lineItemsText },
               { type: 'text', text: data.estimateNumber },
+              { type: 'text', text: lineItemsText },
               { type: 'text', text: fmt(data.totals.total) },
               { type: 'text', text: String(data.items.length) },
             ],
@@ -213,11 +238,11 @@ export interface OrderTemplateData {
  * Sends the `wineyard_order` WABA template to confirm a placed order.
  * Falls back to plain text if the template call fails.
  *
- * Template parameters:
- *   {{1}} = Customer name + company + formatted line items
- *   {{2}} = Sales order number (SO-XXXXX)
- *   {{3}} = Total amount (formatted)
- *   {{4}} = Number of items
+ * Template parameters (positional, matching Meta template order):
+ *   {{order_number}}  [pos 1] = Sales order number (SO-XXXXX)
+ *   {{order_details}} [pos 2] = Customer name + company + formatted line items
+ *   {{total_amount}}  [pos 3] = Total amount (formatted)
+ *   {{item_count}}    [pos 4] = Number of items
  *
  * Button (index 0): "View My Orders" URL button — dynamic suffix is the orders path.
  */
@@ -249,8 +274,8 @@ export async function sendOrderConfirmation(
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: lineItemsText },
               { type: 'text', text: data.salesorderNumber },
+              { type: 'text', text: lineItemsText },
               { type: 'text', text: fmt(data.totals.total) },
               { type: 'text', text: String(data.items.length) },
             ],
@@ -274,13 +299,13 @@ export async function sendOrderConfirmation(
 
     const message =
       `✅ *WineYard Order Confirmed #${data.salesorderNumber}*\n` +
-      `─────────────────────────────\n` +
+      `──────────────────\n` +
       `${lineRows}\n` +
-      `─────────────────────────────\n` +
-      `Subtotal:   ${fmt(data.totals.subtotal)}\n` +
-      `GST (18%):  ${fmt(data.totals.tax)}\n` +
-      `*Total:     ${fmt(data.totals.total)}*\n` +
-      `─────────────────────────────\n` +
+      `──────────────────\n` +
+      `Subtotal:  ${fmt(data.totals.subtotal)}\n` +
+      `GST (18%): ${fmt(data.totals.tax)}\n` +
+      `*Total:    ${fmt(data.totals.total)}*\n` +
+      `──────────────────\n` +
       `Our team will contact you in the next 1 hour for delivery details.`
 
     try {
