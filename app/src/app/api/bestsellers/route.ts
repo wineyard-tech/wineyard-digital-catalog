@@ -43,7 +43,7 @@ export async function GET() {
     (rows as Record<string, unknown>[]).map((r) => [r.zoho_item_id as string, r]),
   )
 
-  const items: CatalogItem[] = popularIds
+  const items = popularIds
     .map((id) => {
       const row = rowMap.get(id)
       if (!row) return null
