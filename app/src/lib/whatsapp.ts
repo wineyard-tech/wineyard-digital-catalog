@@ -79,7 +79,7 @@ export async function sendOtpMessage(
       type: 'template',
       template: {
         name: 'wineyard_otp',
-        language: { code: 'en_US' },
+        language: { code: 'en_IN' },
         components: [
           {
             type: 'body',
@@ -199,7 +199,7 @@ export async function sendEstimateNotification(
       type: 'template',
       template: {
         name: 'wineyard_estimate',
-        language: { code: 'en_US' },
+        language: { code: 'en_IN' },
         components: [
           {
             type: 'body',
@@ -269,7 +269,7 @@ export async function sendOrderConfirmation(
       type: 'template',
       template: {
         name: 'wineyard_order',
-        language: { code: 'en_US' },
+        language: { code: 'en' },
         components: [
           {
             type: 'body',
