@@ -66,7 +66,7 @@ export async function sendOTP(
       type: 'template',
       template: {
         name: templateName,
-        language: { code: 'en' },
+        language: { code: 'en_IN' },
         components: [
           {
             type: 'body',
