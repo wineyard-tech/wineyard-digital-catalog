@@ -7,6 +7,7 @@ import { ArrowLeft, Search, Share2, Plus, Minus } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
+import ProductCard from '../catalog/ProductCard'
 
 interface Props { id: string }
 
@@ -22,7 +23,8 @@ export default function ProductDetailClient({ id }: Props) {
   const router = useRouter()
   const { items, addItem, updateQty } = useCart()
   const [item, setItem] = useState<CatalogItem | null>(null)
-  const [relatedItems, setRelatedItems] = useState<CatalogItem[]>([])
+  const [fbtItems, setFbtItems] = useState<CatalogItem[]>([])
+  const [moreCategoryItems, setMoreCategoryItems] = useState<CatalogItem[]>([])
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [imgError, setImgError] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -41,13 +43,16 @@ export default function ProductDetailClient({ id }: Props) {
         const parsed = JSON.parse(raw) as CatalogItem
         setItem(parsed)
         setLoading(false)
-        // Fetch related items in background
+        // Fetch recommendation sections in background
+        fetch(`/api/recommendations/frequently-bought-together?product_id=${encodeURIComponent(id)}`)
+          .then(r => r.json())
+          .then(d => setFbtItems(d.items ?? []))
+          .catch(() => {})
+
         if (parsed.category_name) {
-          fetch(`/api/catalog?category=${encodeURIComponent(parsed.category_name)}`)
+          fetch(`/api/recommendations/more-in-category?product_id=${encodeURIComponent(id)}&category=${encodeURIComponent(parsed.category_name)}`)
             .then(r => r.json())
-            .then(d => setRelatedItems(
-              (d.items ?? []).filter((i: CatalogItem) => i.zoho_item_id !== id).slice(0, 6)
-            ))
+            .then(d => setMoreCategoryItems(d.items ?? []))
             .catch(() => {})
         }
         return
@@ -59,7 +64,19 @@ export default function ProductDetailClient({ id }: Props) {
       .then(r => r.json())
       .then(d => {
         const found = (d.items ?? []).find((i: CatalogItem) => i.zoho_item_id === id)
-        if (found) setItem(found)
+        if (found) {
+          setItem(found)
+          fetch(`/api/recommendations/frequently-bought-together?product_id=${encodeURIComponent(id)}`)
+            .then(r => r.json())
+            .then(rec => setFbtItems(rec.items ?? []))
+            .catch(() => {})
+          if (found.category_name) {
+            fetch(`/api/recommendations/more-in-category?product_id=${encodeURIComponent(id)}&category=${encodeURIComponent(found.category_name)}`)
+              .then(r => r.json())
+              .then(rec => setMoreCategoryItems(rec.items ?? []))
+              .catch(() => {})
+          }
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -77,11 +94,6 @@ export default function ProductDetailClient({ id }: Props) {
       line_total: item.final_price,
       image_url: item.image_url,
     })
-  }
-
-  function navigateToRelated(related: CatalogItem) {
-    sessionStorage.setItem(`catalog_product_${related.zoho_item_id}`, JSON.stringify(related))
-    router.push(`/product/${related.zoho_item_id}`)
   }
 
   /* ── Loading ── */
@@ -226,36 +238,33 @@ export default function ProductDetailClient({ id }: Props) {
           )}
         </div>
 
-        {/* People also buy */}
-        {relatedItems.length > 0 && (
+        {/* Frequently Bought Together */}
+        {fbtItems.length > 0 && (
           <div style={{ marginTop: 8, background: '#FFFFFF', padding: '14px 0' }}>
             <p style={{ margin: '0 0 10px', padding: '0 16px', fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>
-              People also buy
+              Frequently Bought Together
             </p>
-            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px', scrollbarWidth: 'none' }}>
-              {relatedItems.map((related) => (
-                <button
-                  key={related.zoho_item_id}
-                  onClick={() => navigateToRelated(related)}
-                  style={{ flexShrink: 0, width: 100, background: '#F8FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: 8, cursor: 'pointer', textAlign: 'left' }}
-                >
-                  <div style={{ height: 60, position: 'relative', marginBottom: 6 }}>
-                    <Image
-                      src={related.image_url || PLACEHOLDER}
-                      alt={related.item_name}
-                      fill
-                      style={{ objectFit: 'contain' }}
-                      unoptimized
-                      sizes="100px"
-                    />
-                  </div>
-                  <p style={{ margin: '0 0 2px', fontSize: 11, fontWeight: 500, color: '#1A1A2E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {related.item_name}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: '#1A1A2E' }}>
-                    {fmt(related.final_price)}
-                  </p>
-                </button>
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px 4px', scrollbarWidth: 'none' }}>
+              {fbtItems.map((related) => (
+                <div key={related.zoho_item_id} style={{ flexShrink: 0, width: 160 }}>
+                  <ProductCard item={related} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* More in [Category Name] */}
+        {moreCategoryItems.length > 0 && item.category_name && (
+          <div style={{ marginTop: 8, background: '#FFFFFF', padding: '14px 0' }}>
+            <p style={{ margin: '0 0 10px', padding: '0 16px', fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>
+              More in {item.category_name}
+            </p>
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px 4px', scrollbarWidth: 'none' }}>
+              {moreCategoryItems.map((related) => (
+                <div key={related.zoho_item_id} style={{ flexShrink: 0, width: 160 }}>
+                  <ProductCard item={related} />
+                </div>
               ))}
             </div>
           </div>
