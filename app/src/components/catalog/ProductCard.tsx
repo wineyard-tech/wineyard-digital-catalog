@@ -10,6 +10,7 @@ import { useCart } from '../cart/CartContext'
 interface ProductCardProps {
   item: CatalogItem
   guestMode?: boolean
+  disableNavigation?: boolean
 }
 
 const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -20,7 +21,7 @@ function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
-export default function ProductCard({ item, guestMode = false }: ProductCardProps) {
+export default function ProductCard({ item, guestMode = false, disableNavigation = false }: ProductCardProps) {
   const { items, addItem, updateQty } = useCart()
   const [imgError, setImgError] = useState(false)
   const router = useRouter()
@@ -57,6 +58,7 @@ export default function ProductCard({ item, guestMode = false }: ProductCardProp
   }
 
   function handleCardClick() {
+    if (disableNavigation) return
     if (typeof window !== 'undefined') {
       sessionStorage.setItem(`catalog_product_${item.zoho_item_id}`, JSON.stringify(item))
     }
