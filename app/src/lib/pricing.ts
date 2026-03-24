@@ -136,3 +136,89 @@ export async function resolvePrice(
 
   return { items, total: count ?? 0 }
 }
+
+/**
+ * Fetches a specific set of items by ID with pricing resolved.
+ * Preserves the order of the supplied itemIds array (popularity/lift order is maintained).
+ */
+export async function resolvePriceByIds(
+  zohoContactId: string | null,
+  itemIds: string[]
+): Promise<CatalogItem[]> {
+  if (itemIds.length === 0) return []
+  const supabase = createServiceClient()
+
+  // ── Step 1: Fetch items by IDs ────────────────────────────────────────────
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: rows, error } = await (supabase as any)
+    .from('items')
+    .select('zoho_item_id, item_name, sku, brand, category_name, base_rate, available_stock, image_urls')
+    .eq('status', 'active')
+    .in('zoho_item_id', itemIds)
+
+  if (error || !rows) return []
+
+  // ── Step 2: Resolve pricebook rates (registered users only) ───────────────
+  let pricebookRates: Record<string, number> = {}
+
+  if (zohoContactId) {
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('pricebook_id')
+      .eq('zoho_contact_id', zohoContactId)
+      .maybeSingle()
+
+    if (contact?.pricebook_id) {
+      const { data: pbRows } = await supabase
+        .from('pricebooks')
+        .select('zoho_item_id, custom_rate')
+        .eq('zoho_pricebook_id', contact.pricebook_id)
+
+      if (pbRows) {
+        pricebookRates = Object.fromEntries(
+          (pbRows as { zoho_item_id: string; custom_rate: number }[]).map((p) => [
+            p.zoho_item_id,
+            Number(p.custom_rate),
+          ])
+        )
+      }
+    }
+  }
+
+  // ── Step 3: Shape CatalogItem[], preserving the itemIds order ────────────
+  const rowMap = new Map<string, Record<string, unknown>>()
+  for (const row of rows as Record<string, unknown>[]) {
+    rowMap.set(row.zoho_item_id as string, row)
+  }
+
+  return itemIds
+    .map((id) => rowMap.get(id))
+    .filter((row): row is Record<string, unknown> => row !== undefined)
+    .map((row) => {
+      const baseRate = Number(row.base_rate ?? 0)
+      const customRate = pricebookRates[row.zoho_item_id as string]
+      const finalPrice = customRate ?? baseRate
+      const stock = Number(row.available_stock ?? 0)
+
+      let imageUrl: string | null = null
+      if (Array.isArray(row.image_urls) && row.image_urls.length > 0) {
+        imageUrl = row.image_urls[0] as string
+      }
+
+      return {
+        zoho_item_id: row.zoho_item_id as string,
+        item_name: row.item_name as string,
+        sku: row.sku as string,
+        brand: (row.brand as string | null) ?? null,
+        category_name: (row.category_name as string | null) ?? null,
+        base_rate: baseRate,
+        final_price: finalPrice,
+        available_stock: stock,
+        stock_status:
+          stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
+        image_url: imageUrl,
+        tax_percentage: 18 as const,
+        price_type: customRate != null ? 'custom' : 'base',
+      }
+    })
+}
