@@ -1,0 +1,4 @@
+-- SUPERSEDED — this file is a no-op kept for migration history.
+-- The product_popularity table and refresh function are defined in
+-- 20260324000010_product_popularity_refresh.sql, which uses the
+-- develop-branch-compatible schema from 20260324000001_recommendation_foundation.sql.
