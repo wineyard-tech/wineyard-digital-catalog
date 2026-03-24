@@ -54,9 +54,10 @@ export async function sendText(to: string, body: string): Promise<string | undef
 }
 
 /**
- * Sends OTP + catalog link as two separate messages.
- * Message 1: personalised greeting + catalog link
- * Message 2: OTP code with expiry notice
+ * Sends OTP + catalog link as two messages.
+ * Message 1: plain text greeting with catalog deep link (always plain text — dynamic URL).
+ * Message 2: tries `wineyard_otp` WABA template (body: {{1}} = OTP code, button: copy code).
+ *            Falls back to plain text if the template call fails.
  */
 export async function sendOtpMessage(
   to: string,
@@ -72,10 +73,34 @@ export async function sendOtpMessage(
     `Hi ${name}! Here's your WineYard catalog link:\n${catalogLink}\n\nOpen the link and enter your OTP to access your personalised pricing.`
   )
 
-  await sendText(
-    to,
-    `Your OTP is: *${otp}*\n\nValid for 10 minutes. Do not share this code with anyone.`
-  )
+  try {
+    await callWhatsAppApi({
+      to,
+      type: 'template',
+      template: {
+        name: 'wineyard_otp',
+        language: { code: 'en' },
+        components: [
+          {
+            type: 'body',
+            parameters: [{ type: 'text', text: otp }],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: otp }],
+          },
+        ],
+      },
+    })
+  } catch {
+    // Template unavailable — fall back to plain text
+    await sendText(
+      to,
+      `Your OTP is: *${otp}*\n\nValid for 10 minutes. Do not share this code with anyone.`
+    )
+  }
 }
 
 /**
@@ -114,13 +139,13 @@ export async function sendQuotation(
 
   const message =
     `*WineYard Quotation #${estimateNumber}*\n` +
-    `─────────────────────────────\n` +
+    `──────────────────\n` +
     `${lineRows}\n` +
-    `─────────────────────────────\n` +
-    `Subtotal:   ${fmt(totals.subtotal)}\n` +
-    `GST (18%):  ${fmt(totals.tax)}\n` +
-    `*Total:     ${fmt(totals.total)}*\n` +
-    `─────────────────────────────\n` +
+    `──────────────────\n` +
+    `Subtotal:  ${fmt(totals.subtotal)}\n` +
+    `GST (18%): ${fmt(totals.tax)}\n` +
+    `*Total:    ${fmt(totals.total)}*\n` +
+    `──────────────────\n` +
     `Reply *YES* to confirm or call us.`
 
   try {
@@ -274,13 +299,13 @@ export async function sendOrderConfirmation(
 
     const message =
       `✅ *WineYard Order Confirmed #${data.salesorderNumber}*\n` +
-      `─────────────────────────────\n` +
+      `──────────────────\n` +
       `${lineRows}\n` +
-      `─────────────────────────────\n` +
-      `Subtotal:   ${fmt(data.totals.subtotal)}\n` +
-      `GST (18%):  ${fmt(data.totals.tax)}\n` +
-      `*Total:     ${fmt(data.totals.total)}*\n` +
-      `─────────────────────────────\n` +
+      `──────────────────\n` +
+      `Subtotal:  ${fmt(data.totals.subtotal)}\n` +
+      `GST (18%): ${fmt(data.totals.tax)}\n` +
+      `*Total:    ${fmt(data.totals.total)}*\n` +
+      `──────────────────\n` +
       `Our team will contact you in the next 1 hour for delivery details.`
 
     try {
