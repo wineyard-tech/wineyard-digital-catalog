@@ -6,8 +6,14 @@ import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList, MapPin } from 'luc
 import type { CatalogItem } from '@/types/catalog'
 import SearchBar from '../../components/catalog/SearchBar'
 import ProductGrid from '../../components/catalog/ProductGrid'
+import ProductCarousel from '../../components/catalog/ProductCarousel'
 import OfflineBanner from '../../components/shared/OfflineBanner'
 import { useScrollDirection } from '../../hooks/useScrollDirection'
+
+interface HomeSection {
+  category: string
+  items: CatalogItem[]
+}
 
 interface CatalogClientProps {
   contactName: string | null
@@ -29,6 +35,14 @@ export default function CatalogClient({
   const [sheetOpen, setSheetOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
+  // Carousel state
+  const [picks, setPicks] = useState<CatalogItem[]>([])
+  const [bestsellers, setBestsellers] = useState<CatalogItem[]>([])
+  const [homeSections, setHomeSections] = useState<HomeSection[]>([])
+  const [picksLoading, setPicksLoading] = useState(true)
+  const [bestsellersLoading, setBestsellersLoading] = useState(true)
+  const [sectionsLoading, setSectionsLoading] = useState(true)
+
   // Read wl cookie on mount (client-side only)
   useEffect(() => {
     try {
@@ -43,6 +57,27 @@ export default function CatalogClient({
     } catch {
       // cookie malformed — ignore
     }
+  }, [])
+
+  // Fetch all carousel data in parallel on mount
+  useEffect(() => {
+    fetch('/api/catalog/picks')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setPicks(d.items ?? []))
+      .catch(() => setPicks([]))
+      .finally(() => setPicksLoading(false))
+
+    fetch('/api/catalog/bestsellers')
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setBestsellers(d.items ?? []))
+      .catch(() => setBestsellers([]))
+      .finally(() => setBestsellersLoading(false))
+
+    fetch('/api/catalog/home-sections')
+      .then(r => r.ok ? r.json() : { sections: [] })
+      .then(d => setHomeSections(d.sections ?? []))
+      .catch(() => setHomeSections([]))
+      .finally(() => setSectionsLoading(false))
   }, [])
 
   function handleLogout() {
@@ -192,20 +227,41 @@ export default function CatalogClient({
         <SearchBar onSearch={setSearch} />
       </header>
 
-      {/* Spacer so content doesn't start under the fixed header */}
-      <div style={{ height: 100 }} aria-hidden="true" />
+      {/* Spacer so content doesn't start under the fixed header (header is ~113px) */}
+      <div style={{ height: 120 }} aria-hidden="true" />
 
-      {/* Products */}
-      <div style={{ padding: '12px 12px 0' }}>
-        <ProductGrid items={items} loading={loading && items.length === 0} guestMode={false} />
-      </div>
-
-      {/* Infinite scroll sentinel — sits at the end of the list */}
-      <div ref={sentinelRef} style={{ height: 1 }} />
-      {loading && items.length > 0 && (
-        <div style={{ textAlign: 'center', padding: '16px 0', color: '#6B7280', fontSize: 14 }}>
-          Loading more…
+      {/* Home: carousels when no search; product grid when searching */}
+      {!search.trim() ? (
+        <div>
+          <ProductCarousel title="Picks for You" items={picks} loading={picksLoading} />
+          <ProductCarousel title="Bestsellers" items={bestsellers} loading={bestsellersLoading} />
+          {sectionsLoading
+            ? Array.from({ length: 3 }).map((_, i) => (
+                <ProductCarousel key={i} title="" items={[]} loading={true} />
+              ))
+            : homeSections.map(sec => (
+                <ProductCarousel
+                  key={sec.category}
+                  title={sec.category}
+                  items={sec.items}
+                  seeAllHref={`/catalog/categories/${encodeURIComponent(sec.category)}`}
+                />
+              ))
+          }
         </div>
+      ) : (
+        <>
+          <div style={{ padding: '12px 12px 0' }}>
+            <ProductGrid items={items} loading={loading && items.length === 0} guestMode={false} />
+          </div>
+          {/* Infinite scroll sentinel */}
+          <div ref={sentinelRef} style={{ height: 1 }} />
+          {loading && items.length > 0 && (
+            <div style={{ textAlign: 'center', padding: '16px 0', color: '#6B7280', fontSize: 14 }}>
+              Loading more…
+            </div>
+          )}
+        </>
       )}
 
       {/* Full-screen profile page — authenticated only */}

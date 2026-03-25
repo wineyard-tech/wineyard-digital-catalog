@@ -172,7 +172,6 @@ export async function POST(request: NextRequest) {
       items: body.items,
       totals: { subtotal, tax, total },
     },
-    'catalog/orders'
   )
 
   if (waResult.success) {
@@ -195,7 +194,9 @@ export async function POST(request: NextRequest) {
   })
 }
 
-// ── GET /api/orders — Fetch authenticated user's order list ──────────────────
+// ── GET /api/orders — Unified paginated transaction list ─────────────────────
+
+const LIST_LIMIT = 20
 
 export async function GET(request: NextRequest) {
   let session
@@ -208,47 +209,106 @@ export async function GET(request: NextRequest) {
     throw err
   }
 
+  const { searchParams } = new URL(request.url)
+  const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
+
   const supabase = createServiceClient()
 
-  const { data, error } = await supabase
+  // Fetch all invoices for this contact (no pagination — merge happens in memory)
+  const { data: invoices, error: invErr } = await supabase
+    .from('invoices')
+    .select('zoho_invoice_id, invoice_number, date, total, line_items, estimate_number')
+    .eq('zoho_contact_id', session.zoho_contact_id)
+    .order('date', { ascending: false })
+
+  if (invErr) {
+    console.error('[orders] invoice fetch error:', invErr)
+    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
+  }
+
+  // Fetch all sales orders with their linked estimate number
+  const { data: orders, error: ordErr } = await supabase
     .from('sales_orders')
     .select(`
       public_id,
       salesorder_number,
-      zoho_sync_status,
-      status,
+      date,
+      created_at,
       total,
       line_items,
-      created_at,
       converted_from_estimate_id,
-      estimates!converted_from_estimate_id (estimate_number)
+      estimates!converted_from_estimate_id ( estimate_number )
     `)
     .eq('zoho_contact_id', session.zoho_contact_id)
     .order('created_at', { ascending: false })
-    .limit(50)
 
-  if (error) {
-    console.error('[orders] fetch error:', error)
-    return NextResponse.json({ error: 'Failed to fetch orders' }, { status: 500 })
+  if (ordErr) {
+    console.error('[orders] orders fetch error:', ordErr)
+    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
   }
 
-  const orders = (data ?? []).map((row) => {
-    const items = Array.isArray(row.line_items) ? row.line_items as CartItem[] : []
-    const rawEstimate = row.estimates as unknown
-    const estimateNumber =
-      (Array.isArray(rawEstimate) ? rawEstimate[0] : rawEstimate)?.estimate_number ?? null
-
-    return {
-      id: row.public_id,
-      salesorder_number: row.salesorder_number,
-      zoho_sync_status: row.zoho_sync_status,
-      status: row.status,
-      total: row.total,
-      item_count: items.reduce((sum, i) => sum + i.quantity, 0),
-      created_at: row.created_at,
-      estimate_number: estimateNumber,
+  // Build set of estimate_numbers that are covered by an invoice.
+  // Only add non-empty estimate_number values so null/empty rows don't suppress orders.
+  const coveredByInvoice = new Set<string>()
+  for (const inv of invoices ?? []) {
+    if (inv.estimate_number && inv.estimate_number.trim() !== '') {
+      coveredByInvoice.add(inv.estimate_number)
     }
-  })
+  }
 
-  return NextResponse.json({ orders })
+  type TxRow = {
+    kind: 'invoice' | 'order'
+    id: string
+    doc_number: string
+    date: string
+    total: number
+    item_count: number
+    status_label: 'Invoiced' | 'Ordered'
+  }
+
+  const unified: TxRow[] = []
+
+  for (const inv of invoices ?? []) {
+    const items = Array.isArray(inv.line_items) ? inv.line_items as CartItem[] : []
+    unified.push({
+      kind: 'invoice',
+      id: inv.zoho_invoice_id,
+      doc_number: inv.invoice_number,
+      date: inv.date ?? '',
+      total: inv.total,
+      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      status_label: 'Invoiced',
+    })
+  }
+
+  for (const ord of orders ?? []) {
+    const rawEst = ord.estimates as unknown
+    const estimateNumber =
+      (Array.isArray(rawEst) ? rawEst[0] : rawEst)?.estimate_number ?? null
+    // Skip order if a non-empty invoice already covers it via the estimate chain
+    if (estimateNumber && coveredByInvoice.has(estimateNumber)) continue
+
+    const items = Array.isArray(ord.line_items) ? ord.line_items as CartItem[] : []
+    unified.push({
+      kind: 'order',
+      id: ord.public_id as string,
+      doc_number: ord.salesorder_number,
+      date: ord.date ?? (ord.created_at ? ord.created_at.slice(0, 10) : ''),
+      total: ord.total,
+      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      status_label: 'Ordered',
+    })
+  }
+
+  // Sort unified list by date descending
+  unified.sort((a, b) => b.date.localeCompare(a.date))
+
+  const page = unified.slice(offset, offset + LIST_LIMIT)
+  const has_more = offset + LIST_LIMIT < unified.length
+
+  return NextResponse.json({
+    items: page,
+    has_more,
+    next_offset: offset + LIST_LIMIT,
+  })
 }

@@ -56,6 +56,59 @@ export async function POST(request: NextRequest) {
   const supabase = createServiceClient()
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
+  // ── Update existing estimate (cart opened from WhatsApp deep link) ─────────
+  if (body.estimate_id) {
+    const { data: est } = await supabase
+      .from('estimates')
+      .select('id, public_id, estimate_number, zoho_sync_status')
+      .eq('public_id', body.estimate_id)
+      .eq('zoho_contact_id', session.zoho_contact_id)
+      .maybeSingle()
+
+    if (est) {
+      const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      await supabase
+        .from('estimates')
+        .update({
+          line_items: body.items,
+          cart_hash: cartHash,
+          subtotal,
+          tax_total: tax,
+          total,
+          expires_at: newExpiry,
+          app_whatsapp_sent: false, // re-send below
+        })
+        .eq('id', est.id)
+
+      const deepLinkPath = `cart?estimate_id=${est.public_id}`
+      const waResult = await sendEstimateNotification(
+        session.phone,
+        {
+          customerName: session.contact_name,
+          companyName: '',
+          estimateNumber: est.estimate_number,
+          items: body.items,
+          totals: { subtotal, tax, total },
+        },
+        deepLinkPath,
+      )
+      if (waResult.success) {
+        await supabase
+          .from('estimates')
+          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+          .eq('id', est.id)
+      }
+
+      return NextResponse.json({
+        success: true,
+        estimate_number: est.estimate_number,
+        estimate_id: est.public_id,
+        whatsapp_sent: waResult.success,
+      })
+    }
+    // estimate_id not found or belongs to another contact — fall through to create new
+  }
+
   // ── Duplicate detection: same cart within last 24 hours ───────────────────
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data: existing } = await supabase

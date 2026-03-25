@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
+import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, OrderResponse, CartItem } from '@/types/catalog'
 
 function fmt(n: number) {
@@ -109,7 +110,7 @@ export default function CartPage() {
         const res = await fetch('/api/enquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items, estimate_id: estimateBanner?.public_id ?? undefined }),
         })
         const data: EnquiryResponse = await res.json()
         if (!res.ok || !data.success) throw new Error(data.error ?? 'Failed to submit enquiry')
@@ -303,6 +304,9 @@ export default function CartPage() {
           ))}
         </div>
 
+        {/* Complete your Order — recommendations strip */}
+        <CompleteYourOrder />
+
         {/* Bill Details */}
         <div style={{ margin: '0 16px 8px', background: '#FFFFFF', borderRadius: 10, padding: '14px 16px' }}>
           <p style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>Bill Details</p>
@@ -404,9 +408,6 @@ export default function CartPage() {
           </button>
         </div>
 
-        <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', textAlign: 'center' }}>
-          {itemCount} items · Share quote or place order directly
-        </p>
       </div>
 
       {/* Registration Required modal */}

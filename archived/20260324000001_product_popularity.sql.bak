@@ -1,0 +1,36 @@
+-- Product popularity: tracks 30-day order counts per product.
+-- Queried by /api/buy-again for the empty-state bestsellers section.
+-- Refreshed by calling refresh_product_popularity() (wired to a cron or webhook).
+
+CREATE TABLE IF NOT EXISTS product_popularity (
+  zoho_item_id    TEXT PRIMARY KEY REFERENCES items(zoho_item_id) ON DELETE CASCADE,
+  order_count_30d INTEGER NOT NULL DEFAULT 0,
+  total_orders    INTEGER NOT NULL DEFAULT 0,
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Upserts order counts from sales_orders line_items JSONB.
+-- Counts distinct orders (not line-item rows) per product.
+CREATE OR REPLACE FUNCTION refresh_product_popularity()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+  INSERT INTO product_popularity (zoho_item_id, order_count_30d, total_orders, updated_at)
+  SELECT
+    li->>'zoho_item_id'                                                                       AS zoho_item_id,
+    COUNT(DISTINCT CASE WHEN so.created_at >= NOW() - INTERVAL '30 days' THEN so.id END)::INTEGER AS order_count_30d,
+    COUNT(DISTINCT so.id)::INTEGER                                                            AS total_orders,
+    NOW()
+  FROM sales_orders so,
+    jsonb_array_elements(so.line_items) AS li
+  WHERE so.zoho_sync_status != 'failed'
+    AND (li->>'zoho_item_id') IS NOT NULL
+  GROUP BY li->>'zoho_item_id'
+  ON CONFLICT (zoho_item_id) DO UPDATE
+    SET order_count_30d = EXCLUDED.order_count_30d,
+        total_orders    = EXCLUDED.total_orders,
+        updated_at      = NOW();
+END;
+$$;
