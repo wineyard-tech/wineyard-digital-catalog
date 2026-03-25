@@ -172,7 +172,6 @@ export async function POST(request: NextRequest) {
       items: body.items,
       totals: { subtotal, tax, total },
     },
-    'catalog/orders'
   )
 
   if (waResult.success) {

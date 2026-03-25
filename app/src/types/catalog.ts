@@ -41,6 +41,7 @@ export interface GuestPayload {
 export interface EnquiryRequest {
   items: CartItem[];
   notes?: string;
+  estimate_id?: string; // when set, update this estimate instead of creating a new one
 }
 
 export interface OrderRequest {

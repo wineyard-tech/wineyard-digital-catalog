@@ -43,12 +43,19 @@ export async function proxy(request: NextRequest) {
   const isProtected = PROTECTED_PREFIXES.some((p) => pathname.startsWith(p))
   if (!isProtected) return NextResponse.next()
 
-  // Allow unauthenticated browse mode (general pricing, no cart/orders features)
-  if (pathname.startsWith('/catalog') && searchParams.get('mode') === 'browse') {
-    return NextResponse.next()
+  // All /catalog/* routes are accessible to guests — pages handle guest UX
+  // (empty states, general pricing, no quote/order features).
+  // Full auth is enforced at the API level (403s) and within page components.
+  if (pathname.startsWith('/catalog')) {
+    const response = NextResponse.next()
+    // Persist browse mode via cookie so sub-pages know the user is a guest browser.
+    if (searchParams.get('mode') === 'browse') {
+      response.cookies.set('browse_mode', '1', { path: '/', sameSite: 'lax', maxAge: 86400 })
+    }
+    return response
   }
 
-  // Redirect to login if no session cookie present.
+  // /cart, /orders, /profile — redirect to login if no session cookie present.
   // Full token validation is enforced server-side in API routes and Server Components.
   const token = request.cookies.get('session_token')?.value
   if (!token) {

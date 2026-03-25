@@ -13,10 +13,15 @@ const TABS = [
 
 export const TAB_HEIGHT = 60 // px — exported so siblings can use for spacing
 
+// Detail pages (orders/enquiry/[id], orders/[type]/[id]) are full-screen — no tab bar needed.
+const DETAIL_PATTERN = /^\/catalog\/orders\/.+\/.+/
+
 export default function BottomTabs() {
   const pathname = usePathname()
   const router = useRouter()
   const hidden = useScrollDirection()
+
+  if (DETAIL_PATTERN.test(pathname)) return null
 
   return (
     <nav

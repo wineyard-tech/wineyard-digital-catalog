@@ -71,7 +71,7 @@ export async function GET() {
         price_type: 'base',
       } satisfies CatalogItem
     })
-    .filter((item): item is CatalogItem => item !== null)
+    .filter((item) => item !== null) as CatalogItem[]
 
   return NextResponse.json({ items })
 }

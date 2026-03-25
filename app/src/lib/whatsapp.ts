@@ -18,6 +18,31 @@ interface WaApiResponse {
   messages?: Array<{ id: string }>
 }
 
+const MAX_ITEMS_IN_PARAM = 3
+
+/**
+ * Formats cart items into a single flat string safe for WhatsApp template parameters.
+ * Meta disallows newlines/tabs in parameter values, so items are pipe-separated.
+ * Caps at MAX_ITEMS_IN_PARAM to stay well within the 1,024-char parameter limit
+ * and keep the notification scannable — the deep-link button is the canonical receipt.
+ */
+function formatItemsParam(items: CartItem[]): string {
+  const fmt = (n: number) =>
+    `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+  const visible = items.slice(0, MAX_ITEMS_IN_PARAM)
+  const overflow = items.length - visible.length
+
+  const lines = visible.map((item) => {
+    const name = item.item_name.length > 30 ? item.item_name.slice(0, 27) + '...' : item.item_name
+    return `${name} x${item.quantity} ${fmt(item.line_total)}`
+  })
+
+  if (overflow > 0) lines.push(`+${overflow} more item${overflow > 1 ? 's' : ''}`)
+
+  return lines.join(' | ')
+}
+
 /**
  * Posts to the WhatsApp Cloud API.
  * Returns the WAMID (message ID) from the response for tracking.
@@ -168,11 +193,11 @@ export interface EstimateTemplateData {
  * Sends the `wineyard_estimate` WABA template with line items and a deep link button.
  * Falls back to sendQuotation (plain text) if the template call fails.
  *
- * Template parameters (positional, matching Meta template order):
- *   {{estimate_number}} [pos 1] = Estimate number (EST-XXXXX)
- *   {{estimate_details}} [pos 2] = Customer name + company + formatted line items
- *   {{total_amount}}    [pos 3] = Total amount (formatted)
- *   {{item_count}}      [pos 4] = Number of items
+ * Template parameters (named variables — parameter_name required by Meta API):
+ *   {{estimate_number}}  = Estimate number (EST-XXXXX)
+ *   {{estimate_details}} = Customer name + company + formatted line items
+ *   {{total_amount}}     = Total amount (formatted)
+ *   {{item_count}}       = Number of items
  *
  * Button (index 0): "Review in App" URL button — dynamic suffix is the deep link path.
  */
@@ -184,14 +209,7 @@ export async function sendEstimateNotification(
   const fmt = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-  const lineItemsText =
-    `${data.customerName}\n${data.companyName}\n` +
-    data.items
-      .map((item) => {
-        const name = item.item_name.length > 40 ? item.item_name.slice(0, 37) + '...' : item.item_name
-        return `${name} (Qty: ${item.quantity}) - ${fmt(item.line_total)}`
-      })
-      .join('\n')
+  const lineItemsText = formatItemsParam(data.items)
 
   try {
     const messageId = await callWhatsAppApi({
@@ -204,10 +222,10 @@ export async function sendEstimateNotification(
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: data.estimateNumber },
-              { type: 'text', text: lineItemsText },
-              { type: 'text', text: fmt(data.totals.total) },
-              { type: 'text', text: String(data.items.length) },
+              { type: 'text', parameter_name: 'estimate_number', text: data.estimateNumber },
+              { type: 'text', parameter_name: 'estimate_details', text: lineItemsText },
+              { type: 'text', parameter_name: 'total_amount',     text: data.totals.total.toLocaleString('en-IN', { maximumFractionDigits: 0 }) },
+              { type: 'text', parameter_name: 'item_count',       text: String(data.items.length) },
             ],
           },
           {
@@ -238,30 +256,22 @@ export interface OrderTemplateData {
  * Sends the `wineyard_order` WABA template to confirm a placed order.
  * Falls back to plain text if the template call fails.
  *
- * Template parameters (positional, matching Meta template order):
- *   {{order_number}}  [pos 1] = Sales order number (SO-XXXXX)
- *   {{order_details}} [pos 2] = Customer name + company + formatted line items
- *   {{total_amount}}  [pos 3] = Total amount (formatted)
- *   {{item_count}}    [pos 4] = Number of items
+ * Template parameters (named variables — parameter_name required by Meta API):
+ *   {{order_number}}  = Sales order number (SO-XXXXX)
+ *   {{order_details}} = Customer name + company + formatted line items
+ *   {{total_amount}}  = Total amount (formatted)
+ *   {{item_count}}    = Number of items
  *
  * Button (index 0): "View My Orders" URL button — dynamic suffix is the orders path.
  */
 export async function sendOrderConfirmation(
   to: string,
   data: OrderTemplateData,
-  ordersPath: string  // e.g. "catalog/orders"
 ): Promise<WaSendResult> {
   const fmt = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
 
-  const lineItemsText =
-    `${data.customerName}\n${data.companyName}\n` +
-    data.items
-      .map((item) => {
-        const name = item.item_name.length > 40 ? item.item_name.slice(0, 37) + '...' : item.item_name
-        return `${name} (Qty: ${item.quantity}) - ${fmt(item.line_total)}`
-      })
-      .join('\n')
+  const lineItemsText = formatItemsParam(data.items)
 
   try {
     const messageId = await callWhatsAppApi({
@@ -274,17 +284,11 @@ export async function sendOrderConfirmation(
           {
             type: 'body',
             parameters: [
-              { type: 'text', text: data.salesorderNumber },
-              { type: 'text', text: lineItemsText },
-              { type: 'text', text: fmt(data.totals.total) },
-              { type: 'text', text: String(data.items.length) },
+              { type: 'text', parameter_name: 'order_number',  text: data.salesorderNumber },
+              { type: 'text', parameter_name: 'order_details', text: lineItemsText },
+              { type: 'text', parameter_name: 'total_amount',  text: data.totals.total.toLocaleString('en-IN', { maximumFractionDigits: 0 }) },
+              { type: 'text', parameter_name: 'item_count',    text: String(data.items.length) },
             ],
-          },
-          {
-            type: 'button',
-            sub_type: 'url',
-            index: '0',
-            parameters: [{ type: 'text', text: ordersPath }],
           },
         ],
       },

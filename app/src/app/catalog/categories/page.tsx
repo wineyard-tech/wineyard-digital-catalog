@@ -209,7 +209,7 @@ export default function CategoriesPage() {
               return (
                 <button
                   key={cat.zoho_category_id}
-                  onClick={() => router.push(`/catalog/categories/${cat.zoho_category_id}`)}
+                  onClick={() => router.push(`/catalog/categories/${encodeURIComponent(cat.category_name)}`)}
                   style={{
                     background: '#FFFFFF',
                     border: '1px solid #F1F5F9',
@@ -258,7 +258,6 @@ export default function CategoriesPage() {
                   >
                     <span
                       style={{
-                        display: 'block',
                         fontSize: 10,
                         fontWeight: 600,
                         color: '#1A1A2E',

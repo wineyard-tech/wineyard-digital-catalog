@@ -110,7 +110,7 @@ export default function CartPage() {
         const res = await fetch('/api/enquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items, estimate_id: estimateBanner?.public_id ?? undefined }),
         })
         const data: EnquiryResponse = await res.json()
         if (!res.ok || !data.success) throw new Error(data.error ?? 'Failed to submit enquiry')
@@ -408,9 +408,6 @@ export default function CartPage() {
           </button>
         </div>
 
-        <p style={{ margin: 0, fontSize: 11, color: '#9CA3AF', textAlign: 'center' }}>
-          {itemCount} items · Share quote or place order directly
-        </p>
       </div>
 
       {/* Registration Required modal */}
