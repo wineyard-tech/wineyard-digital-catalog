@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { Loader } from '@googlemaps/js-api-loader'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, Navigation, Search, X } from 'lucide-react'
@@ -14,22 +15,6 @@ interface LocationData {
   city: string
   lat?: number
   lng?: number
-}
-
-interface NominatimResult {
-  place_id?: number
-  display_name: string
-  address: {
-    suburb?: string
-    neighbourhood?: string
-    county?: string
-    city?: string
-    town?: string
-    state_district?: string
-    state?: string
-  }
-  lat?: string
-  lon?: string
 }
 
 type DetectState = 'idle' | 'detecting' | 'denied'
@@ -52,15 +37,30 @@ function writeLocationCookie(data: LocationData) {
   document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(data))}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=lax`
 }
 
-function extractLocation(result: NominatimResult, lat?: number, lng?: number): LocationData {
-  const a = result.address ?? {}
-  return {
-    address: result.display_name.split(',').slice(0, 2).join(',').trim(),
-    area: a.suburb ?? a.neighbourhood ?? a.county ?? '',
-    city: a.city ?? a.town ?? a.state_district ?? '',
-    lat,
-    lng,
-  }
+/**
+ * Extracts human-readable area/city from a Google address_components array.
+ * Priority: sublocality_level_1 > sublocality > neighborhood for area
+ *           locality > administrative_area_level_2 for city
+ */
+function parseAddressComponents(
+  components: google.maps.GeocoderAddressComponent[]
+): { area: string; city: string } {
+  const get = (type: string) =>
+    components.find(c => c.types.includes(type))?.long_name ?? ''
+  const area = get('sublocality_level_1') || get('sublocality') || get('neighborhood') || ''
+  const city = get('locality') || get('administrative_area_level_2') || ''
+  return { area, city }
+}
+
+function buildLocationData(
+  result: google.maps.GeocoderResult,
+  lat: number,
+  lng: number
+): LocationData {
+  const { area, city } = parseAddressComponents(result.address_components)
+  // Use first two comma-separated parts of formatted_address as the short label
+  const address = result.formatted_address.split(',').slice(0, 2).join(',').trim()
+  return { address, area, city, lat, lng }
 }
 
 export default function LocationPage() {
@@ -69,16 +69,20 @@ export default function LocationPage() {
   const [detectState, setDetectState] = useState<DetectState>('idle')
   const [fromCatalog, setFromCatalog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([])
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [toast, setToast] = useState('')
+
   const searchInputRef = useRef<HTMLInputElement>(null)
   const mountedRef = useRef(true)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Lazy-initialised on first use so the Maps JS bundle is not loaded on page open
+  const loaderRef = useRef<Loader | null>(null)
+  const mapsLoadedRef = useRef(false)
 
   useEffect(() => {
-    mountedRef.current = true   // Reset on each mount — guards against React Strict Mode double-invoke
+    mountedRef.current = true
     setFromCatalog(new URLSearchParams(window.location.search).get('from') === 'catalog')
     setSavedLocation(readLocationCookie())
     searchInputRef.current?.focus()
@@ -89,6 +93,22 @@ export default function LocationPage() {
     }
   }, [])
 
+  function getLoader(): Loader {
+    if (!loaderRef.current) {
+      loaderRef.current = new Loader({
+        apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
+        libraries: ['places', 'geocoding'] as Parameters<typeof Loader>[0]['libraries'],
+      })
+    }
+    return loaderRef.current
+  }
+
+  async function ensureMapsLoaded() {
+    if (mapsLoadedRef.current) return
+    await getLoader().load()
+    mapsLoadedRef.current = true
+  }
+
   function showToast(msg: string) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setToast(msg)
@@ -97,11 +117,10 @@ export default function LocationPage() {
 
   function confirmAndNavigate(loc: LocationData) {
     writeLocationCookie(loc)
-    // Use mode=browse so auth proxy allows both guests and authenticated users through
     router.replace('/catalog?mode=browse')
   }
 
-  function requestGeolocation() {
+  async function requestGeolocation() {
     if (!navigator?.geolocation) {
       showToast("Location not supported — please search manually")
       return
@@ -110,14 +129,15 @@ export default function LocationPage() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`,
-            {}
-          )
-          if (!res.ok) throw new Error('Nominatim failed')
-          const data = (await res.json()) as NominatimResult
+          await ensureMapsLoaded()
+          const geocoder = new google.maps.Geocoder()
+          const resp = await geocoder.geocode({
+            location: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+          })
+          const result = resp.results[0]
+          if (!result) throw new Error('No geocode results')
           if (!mountedRef.current) return
-          confirmAndNavigate(extractLocation(data, pos.coords.latitude, pos.coords.longitude))
+          confirmAndNavigate(buildLocationData(result, pos.coords.latitude, pos.coords.longitude))
         } catch {
           if (!mountedRef.current) return
           setDetectState('idle')
@@ -145,19 +165,36 @@ export default function LocationPage() {
     setSearchLoading(true)
     setSuggestions([])
     try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&countrycodes=in&format=json&limit=6&addressdetails=1`,
-        {}
-      )
-      if (!res.ok) throw new Error()
-      const data = (await res.json()) as NominatimResult[]
+      await ensureMapsLoaded()
+      const svc = new google.maps.places.AutocompleteService()
+      const resp = await svc.getPlacePredictions({
+        input: q,
+        componentRestrictions: { country: 'in' },
+        types: ['geocode'],
+      })
       if (!mountedRef.current) return
-      setSuggestions(data)
-      if (data.length === 0) showToast('No results — try a different area name')
+      const predictions = resp?.predictions ?? []
+      setSuggestions(predictions)
+      if (predictions.length === 0) showToast('No results — try a different area name')
     } catch {
       if (mountedRef.current) showToast('Search unavailable — try again')
     } finally {
       if (mountedRef.current) setSearchLoading(false)
+    }
+  }
+
+  async function handleSuggestionClick(prediction: google.maps.places.AutocompletePrediction) {
+    try {
+      await ensureMapsLoaded()
+      const geocoder = new google.maps.Geocoder()
+      const resp = await geocoder.geocode({ placeId: prediction.place_id })
+      const result = resp.results[0]
+      if (!result?.geometry?.location) throw new Error('No geometry')
+      const lat = result.geometry.location.lat()
+      const lng = result.geometry.location.lng()
+      confirmAndNavigate(buildLocationData(result, lat, lng))
+    } catch {
+      showToast("Couldn't get location details — please try again")
     }
   }
 
@@ -248,8 +285,8 @@ export default function LocationPage() {
         <div style={{ padding: '0 16px', flex: 1 }}>
           {suggestions.map((s, i) => (
             <button
-              key={s.place_id ?? i}
-              onClick={() => confirmAndNavigate(extractLocation(s, s.lat ? parseFloat(s.lat) : undefined, s.lon ? parseFloat(s.lon) : undefined))}
+              key={s.place_id}
+              onClick={() => handleSuggestionClick(s)}
               style={{
                 width: '100%',
                 display: 'flex',
@@ -265,7 +302,7 @@ export default function LocationPage() {
             >
               <MapPin size={16} color="#94A3B8" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
               <span style={{ fontSize: 14, color: '#374151', lineHeight: 1.4 }}>
-                {s.display_name.split(',').slice(0, 3).join(', ')}
+                {s.description}
               </span>
             </button>
           ))}
