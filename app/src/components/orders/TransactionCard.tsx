@@ -13,20 +13,25 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-const chipStyle: Record<'Invoiced' | 'Ordered', CSSProperties> = {
+const chipStyle: Record<'Invoiced', CSSProperties> = {
   Invoiced: { background: '#DBEAFE', color: '#1E40AF' },
+  /* PHASE2_SO_ARCHIVE_START
   Ordered:  { background: '#D1FAE5', color: '#065F46' },
+  PHASE2_SO_ARCHIVE_END */
 }
 
 export function TransactionCard({ item }: { item: TransactionListItem }) {
   const router = useRouter()
 
   function handleClick() {
+    /* PHASE2_SO_ARCHIVE_START
     const type = item.kind === 'invoice' ? 'invoice' : 'order'
     router.push(`/catalog/orders/${type}/${item.id}`)
+    PHASE2_SO_ARCHIVE_END */
+    router.push(`/catalog/orders/invoice/${item.id}`)
   }
 
-  const chip = chipStyle[item.status_label]
+  const chip = chipStyle['Invoiced']
 
   return (
     <div
