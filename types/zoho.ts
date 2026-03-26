@@ -78,13 +78,33 @@ export interface ZohoContact {
   last_modified_time?: string;
 }
 
+/** Lightweight row returned by GET /pricebooks (list endpoint — no items). */
+export interface ZohoPricebookListItem {
+  pricebook_id: string;
+  pricebook_name: string;
+  currency_id?: string;
+  status?: string;
+}
+
+/** Full pricebook returned by GET /pricebooks/{id} (includes item prices). */
 export interface ZohoPricebook {
   pricebook_id: string;
   pricebook_name: string;
+  currency_id?: string;
+  status?: string;
   items: Array<{
     item_id: string;
-    rate: number;
+    name?: string;
+    rate: number;           // custom_rate for this pricebook
+    pricebook_rate?: number; // alias Zoho sometimes returns
   }>;
+}
+
+/** Wrapper returned by GET /pricebooks/{id} */
+export interface ZohoPricebookDetailResponse {
+  code: number;
+  message: string;
+  pricebook: ZohoPricebook;
 }
 
 export interface ZohoTokenResponse {
