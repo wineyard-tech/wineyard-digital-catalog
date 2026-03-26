@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Loader } from '@googlemaps/js-api-loader'
+import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, Navigation, Search, X } from 'lucide-react'
@@ -58,7 +58,6 @@ function buildLocationData(
   lng: number
 ): LocationData {
   const { area, city } = parseAddressComponents(result.address_components)
-  // Use first two comma-separated parts of formatted_address as the short label
   const address = result.formatted_address.split(',').slice(0, 2).join(',').trim()
   return { address, area, city, lat, lng }
 }
@@ -77,9 +76,7 @@ export default function LocationPage() {
   const mountedRef = useRef(true)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Lazy-initialised on first use so the Maps JS bundle is not loaded on page open
-  const loaderRef = useRef<Loader | null>(null)
-  const mapsLoadedRef = useRef(false)
+  const mapsInitRef = useRef(false)
 
   useEffect(() => {
     mountedRef.current = true
@@ -93,20 +90,10 @@ export default function LocationPage() {
     }
   }, [])
 
-  function getLoader(): Loader {
-    if (!loaderRef.current) {
-      loaderRef.current = new Loader({
-        apiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
-        libraries: ['places', 'geocoding'] as Parameters<typeof Loader>[0]['libraries'],
-      })
-    }
-    return loaderRef.current
-  }
-
-  async function ensureMapsLoaded() {
-    if (mapsLoadedRef.current) return
-    await getLoader().load()
-    mapsLoadedRef.current = true
+  function initMaps() {
+    if (mapsInitRef.current) return
+    setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '' })
+    mapsInitRef.current = true
   }
 
   function showToast(msg: string) {
@@ -129,8 +116,9 @@ export default function LocationPage() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          await ensureMapsLoaded()
-          const geocoder = new google.maps.Geocoder()
+          initMaps()
+          const { Geocoder } = await importLibrary('geocoding') as google.maps.GeocodingLibrary
+          const geocoder = new Geocoder()
           const resp = await geocoder.geocode({
             location: { lat: pos.coords.latitude, lng: pos.coords.longitude },
           })
@@ -165,8 +153,9 @@ export default function LocationPage() {
     setSearchLoading(true)
     setSuggestions([])
     try {
-      await ensureMapsLoaded()
-      const svc = new google.maps.places.AutocompleteService()
+      initMaps()
+      const { AutocompleteService } = await importLibrary('places') as google.maps.PlacesLibrary
+      const svc = new AutocompleteService()
       const resp = await svc.getPlacePredictions({
         input: q,
         componentRestrictions: { country: 'in' },
@@ -185,8 +174,9 @@ export default function LocationPage() {
 
   async function handleSuggestionClick(prediction: google.maps.places.AutocompletePrediction) {
     try {
-      await ensureMapsLoaded()
-      const geocoder = new google.maps.Geocoder()
+      initMaps()
+      const { Geocoder } = await importLibrary('geocoding') as google.maps.GeocodingLibrary
+      const geocoder = new Geocoder()
       const resp = await geocoder.geocode({ placeId: prediction.place_id })
       const result = resp.results[0]
       if (!result?.geometry?.location) throw new Error('No geometry')
