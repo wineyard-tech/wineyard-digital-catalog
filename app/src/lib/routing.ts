@@ -25,23 +25,26 @@ export interface GeocodedLocation {
 
 /**
  * Returns the zoho_location_id of the warehouse closest to (userLat, userLng).
- * Returns null if the locations array is empty.
+ * Returns null if no locations have finite coordinates.
  */
 export function getNearestLocation(
   userLat: number,
   userLng: number,
   locations: GeocodedLocation[]
 ): string | null {
-  if (locations.length === 0) return null
+  const valid = locations.filter(
+    l => isFinite(l.latitude) && isFinite(l.longitude)
+  )
+  if (valid.length === 0) return null
 
-  let nearest = locations[0]
+  let nearest = valid[0]
   let minDist = haversineKm(userLat, userLng, nearest.latitude, nearest.longitude)
 
-  for (let i = 1; i < locations.length; i++) {
-    const dist = haversineKm(userLat, userLng, locations[i].latitude, locations[i].longitude)
+  for (let i = 1; i < valid.length; i++) {
+    const dist = haversineKm(userLat, userLng, valid[i].latitude, valid[i].longitude)
     if (dist < minDist) {
       minDist = dist
-      nearest = locations[i]
+      nearest = valid[i]
     }
   }
 
