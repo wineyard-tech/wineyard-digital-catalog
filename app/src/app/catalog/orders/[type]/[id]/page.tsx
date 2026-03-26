@@ -62,7 +62,8 @@ export default function TransactionDetailPage({
 }: {
   params: Promise<{ type: string; id: string }>
 }) {
-  const { type, id } = use(params)
+  // PHASE2_SO_ARCHIVE: const { type, id } = use(params) — 'type' removed; only invoice routes active
+  const { id } = use(params)
   const router = useRouter()
   const { items: cartItems, loadItems } = useCart()
 
@@ -71,7 +72,8 @@ export default function TransactionDetailPage({
   const [error, setError] = useState<string | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
 
-  const kind = type === 'invoice' ? 'invoice' : 'order'
+  // PHASE2_SO_ARCHIVE: const kind = type === 'invoice' ? 'invoice' : 'order'
+  const kind: 'invoice' | 'order' = 'invoice'
 
   useEffect(() => {
     fetch(`/api/orders/${id}?kind=${kind}`)

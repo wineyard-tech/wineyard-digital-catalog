@@ -53,7 +53,8 @@ export function OrdersTab() {
       if (res.status === 403) throw new Error('Please log in to view your orders.')
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setItems((prev) => pageOffset === 0 ? data.items : [...prev, ...data.items])
+      const incoming = (data.items as TransactionListItem[]).filter((i) => i.kind === 'invoice')
+      setItems((prev) => pageOffset === 0 ? incoming : [...prev, ...incoming])
       hasMoreRef.current = data.has_more
       setHasMore(data.has_more)
       offsetRef.current = data.next_offset
@@ -105,11 +106,11 @@ export function OrdersTab() {
     )
   }
 
-  if (initialDone && items.length === 0) {
+  if (initialDone && items.length === 0 && !hasMore) {
     return (
       <EmptyState>
-        <p style={{ fontSize: 16, fontWeight: 600, color: '#1A1A2E', margin: '0 0 6px' }}>No orders yet</p>
-        <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Your placed orders and invoices will appear here.</p>
+        <p style={{ fontSize: 16, fontWeight: 600, color: '#1A1A2E', margin: '0 0 6px' }}>No invoices yet</p>
+        <p style={{ fontSize: 13, color: '#9CA3AF', margin: 0 }}>Your invoices will appear here.</p>
       </EmptyState>
     )
   }
@@ -131,7 +132,7 @@ export function OrdersTab() {
 
       {!hasMore && items.length > 0 && (
         <p style={{ textAlign: 'center', fontSize: 12, color: '#9CA3AF', padding: '8px 0' }}>
-          All transactions loaded
+          All invoices loaded
         </p>
       )}
     </div>
