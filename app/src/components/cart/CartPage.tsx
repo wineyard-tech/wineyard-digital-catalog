@@ -6,7 +6,7 @@ import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-re
 import Image from 'next/image'
 import { useCart } from './CartContext'
 import CompleteYourOrder from './CompleteYourOrder'
-import type { EnquiryResponse, OrderResponse, CartItem } from '@/types/catalog'
+import type { EnquiryResponse, CartItem } from '@/types/catalog'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -36,9 +36,9 @@ export default function CartPage() {
   const { items, subtotal, updateQty, removeItem, clearCart, loadItems } = useCart()
 
   const [loading, setLoading] = useState(false)
-  const [orderLoading, setOrderLoading] = useState(false)
+  // PHASE2_SO_ARCHIVE: const [orderLoading, setOrderLoading] = useState(false)
   const [quoteResult, setQuoteResult] = useState<EnquiryResponse | null>(null)
-  const [orderResult, setOrderResult] = useState<OrderResponse | null>(null)
+  // PHASE2_SO_ARCHIVE: const [orderResult, setOrderResult] = useState<OrderResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [authState, setAuthState] = useState<AuthState | null>(null)
   const [showRegModal, setShowRegModal] = useState(false)
@@ -124,6 +124,7 @@ export default function CartPage() {
     })
   }
 
+  /* PHASE2_SO_ARCHIVE_START
   async function handlePlaceOrder() {
     requireAuth(async () => {
       setOrderLoading(true)
@@ -144,7 +145,6 @@ export default function CartPage() {
         }
 
         if (data.duplicate) {
-          // Same cart already ordered within 1 hour — warn and redirect to orders
           setError(`Order ${data.salesorder_number} already placed for this cart. Redirecting to your orders...`)
           setTimeout(() => router.push('/catalog/orders'), 2000)
           return
@@ -159,6 +159,7 @@ export default function CartPage() {
       }
     })
   }
+  PHASE2_SO_ARCHIVE_END */
 
   function openAdminWhatsApp() {
     const wabaLink = process.env.NEXT_PUBLIC_WABA_LINK ?? ''
@@ -190,6 +191,7 @@ export default function CartPage() {
     )
   }
 
+  /* PHASE2_SO_ARCHIVE_START
   // ── Order success screen ──────────────────────────────────────────────────
   if (orderResult) {
     return (
@@ -199,7 +201,7 @@ export default function CartPage() {
         <p style={{ margin: '0 0 4px', fontSize: 14, color: '#6B7280' }}>{orderResult.salesorder_number}</p>
         {orderResult.sync_pending && (
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#D97706', background: '#FFFBEB', padding: '4px 10px', borderRadius: 6 }}>
-            Order syncing with system — we&apos;ll confirm shortly.
+            Order syncing with system — we'll confirm shortly.
           </p>
         )}
         <p style={{ margin: '0 0 8px', fontSize: 14, color: '#1A1A2E', fontWeight: 500 }}>
@@ -223,8 +225,9 @@ export default function CartPage() {
       </div>
     )
   }
+  PHASE2_SO_ARCHIVE_END */
 
-  const anyLoading = loading || orderLoading
+  const anyLoading = loading
   const isButtonDisabled = anyLoading || items.length === 0
 
   // ── Main cart ─────────────────────────────────────────────────────────────
@@ -346,18 +349,18 @@ export default function CartPage() {
 
         {authState && !authState.authenticated && (
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>
-            Registration required to request quotes or place orders
+            Registration required to request quotes
           </p>
         )}
 
-        <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
-          {/* WhatsApp Quote — outline */}
+        <div style={{ marginBottom: 8 }}>
+          {/* WhatsApp Quote */}
           <button
             onClick={handleGetQuote}
             disabled={isButtonDisabled}
             title={!authState?.authenticated ? 'Registration Required' : undefined}
             style={{
-              flex: 1,
+              width: '100%',
               background: '#FFFFFF',
               color: isButtonDisabled ? '#9CA3AF' : '#059669',
               border: `1.5px solid ${isButtonDisabled ? '#D1D5DB' : '#059669'}`,
@@ -378,8 +381,7 @@ export default function CartPage() {
             }
             {loading ? 'Sending...' : 'Get Quote'}
           </button>
-
-          {/* Place Order — filled */}
+          {/* PHASE2_SO_ARCHIVE_START
           <button
             onClick={handlePlaceOrder}
             disabled={isButtonDisabled}
@@ -406,6 +408,7 @@ export default function CartPage() {
             }
             {orderLoading ? 'Placing...' : 'Place Order →'}
           </button>
+          PHASE2_SO_ARCHIVE_END */}
         </div>
 
       </div>
