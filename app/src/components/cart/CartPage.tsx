@@ -45,7 +45,7 @@ export default function CartPage() {
   const [estimateBanner, setEstimateBanner] = useState<EstimateBanner | null>(null)
   const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
 
-  // Read wl cookie for delivery location display
+  // Read wl cookie for delivery location display and routing coords
   useEffect(() => {
     try {
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
@@ -55,6 +55,19 @@ export default function CartPage() {
       }
     } catch { /* malformed cookie — ignore */ }
   }, [])
+
+  function readUserCoords(): { user_lat: number | null; user_lng: number | null } {
+    try {
+      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
+      if (!match) return { user_lat: null, user_lng: null }
+      const data = JSON.parse(decodeURIComponent(match.slice(3)))
+      const lat = typeof data.lat === 'number' && isFinite(data.lat) ? data.lat : null
+      const lng = typeof data.lng === 'number' && isFinite(data.lng) ? data.lng : null
+      return { user_lat: lat, user_lng: lng }
+    } catch {
+      return { user_lat: null, user_lng: null }
+    }
+  }
 
   const gst = Math.round(subtotal * GST_RATE)
   const total = subtotal + gst
@@ -107,10 +120,15 @@ export default function CartPage() {
       setLoading(true)
       setError(null)
       try {
+        const coords = readUserCoords()
         const res = await fetch('/api/enquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items, estimate_id: estimateBanner?.public_id ?? undefined }),
+          body: JSON.stringify({
+            items,
+            estimate_id: estimateBanner?.public_id ?? undefined,
+            ...coords,
+          }),
         })
         const data: EnquiryResponse = await res.json()
         if (!res.ok || !data.success) throw new Error(data.error ?? 'Failed to submit enquiry')

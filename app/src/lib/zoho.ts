@@ -124,11 +124,15 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
  * document level, so we send rate explicitly per line item. CartItem.rate is
  * already pricebook-resolved by the catalog (pricebook_rate ?? base_rate),
  * so this correctly honours per-contact pricing without a separate lookup.
+ *
+ * options.locationId: Zoho location_id of the nearest warehouse — passed as
+ * `location_id` in the request body so the estimate is associated with that
+ * warehouse for fulfilment routing.
  */
 export async function createEstimate(
   contactId: string,
   lineItems: CartItem[],
-  notes?: string
+  options?: { notes?: string; locationId?: string | null }
 ): Promise<ZohoEstimateResponse> {
   const token = await getAccessToken()
   const orgId = process.env.ZOHO_ORG_ID!
@@ -141,7 +145,8 @@ export async function createEstimate(
       quantity: item.quantity,
       rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
     })),
-    ...(notes ? { notes } : {}),
+    ...(options?.notes ? { notes: options.notes } : {}),
+    ...(options?.locationId ? { location_id: options.locationId } : {}),
   }
 
   const res = await fetch(`${ZOHO_API_BASE}/estimates?organization_id=${orgId}`, {
