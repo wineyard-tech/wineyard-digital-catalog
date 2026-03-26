@@ -35,7 +35,7 @@ function TabContent() {
         <div style={{ display: 'flex', gap: 0 }}>
           {(['orders', 'enquiries'] as Tab[]).map((tab) => {
             const isActive = activeTab === tab
-            const label = tab === 'orders' ? 'Orders' : 'Enquiries'
+            const label = tab === 'orders' ? 'Invoices' : 'Enquiries'
             return (
               <button
                 key={tab}
