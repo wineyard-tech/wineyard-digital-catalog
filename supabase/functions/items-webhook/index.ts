@@ -14,6 +14,18 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
+
+const logger = makeLogger('[items-webhook]')
+
+// Fields watched for delta logging — tracks the changes that matter most
+// operationally (pricing, stock, status).
+const WATCHED_FIELDS = [
+  'status', 'base_rate', 'purchase_rate',
+  'available_stock', 'actual_available_stock',
+  'brand', 'category_name', 'tax_percentage',
+  'item_name', 'sku',
+]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,40 +73,29 @@ interface ZohoItemPayload {
   last_modified_time?: string
 }
 
-// Zoho sends either "item_created"/"item_updated"/"item_deleted" (snake_case)
-// or "Create"/"Update"/"Delete" depending on webhook version — handle both.
 interface ZohoWebhookPayload {
-  event_type?: string   // "item_created" | "item_updated" | "item_deleted"
-  webhook_event?: string // "Create" | "Update" | "Delete" (older format)
+  event_type?: string
+  webhook_event?: string
   data?: ZohoItemPayload | Record<string, unknown>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Coerce Zoho's empty-string numeric fields to null for Postgres INTEGER columns. */
 function int(val: unknown): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : Math.round(n)
 }
 
-/** Same coercion for DECIMAL columns. */
 function dec(val: unknown): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : n
 }
 
-/**
- * Normalise Zoho's event_type to one of: 'created' | 'updated' | 'deleted' | null.
- * Zoho may send: "item_created", "item.created", "Create", "Update", "Delete", etc.
- * Uses an exact allow-list rather than substring match to avoid misrouting future
- * Zoho event types (e.g., "item_reactivated" would otherwise match 'created').
- */
 function normaliseEventType(raw: string | undefined): 'created' | 'updated' | 'deleted' | null {
   if (!raw) return null
   const lower = raw.toLowerCase().replace(/[^a-z]/g, '_')
-  // 'upsert' is our own query param convention for Zoho's create/update webhook
   const CREATED = new Set(['item_created', 'create', 'created'])
   const UPDATED = new Set(['item_updated', 'update', 'updated', 'upsert'])
   const DELETED = new Set(['item_deleted', 'delete', 'deleted'])
@@ -104,15 +105,9 @@ function normaliseEventType(raw: string | undefined): 'created' | 'updated' | 'd
   return null
 }
 
-/** Log a processing failure to webhook_errors. Never throws. */
 async function logError(
   supabase: SupabaseClient,
-  opts: {
-    event_type: string
-    zoho_entity_id?: string
-    error_message: string
-    payload: unknown
-  }
+  opts: { event_type: string; zoho_entity_id?: string; error_message: string; payload: unknown }
 ): Promise<void> {
   try {
     await supabase.from('webhook_errors').insert({
@@ -123,8 +118,7 @@ async function logError(
       payload: opts.payload,
     })
   } catch (e) {
-    // If even error logging fails, at least emit to function logs
-    console.error('Failed to log webhook error:', e)
+    logger.error('LOG_ERR', { msg: 'Failed to write to webhook_errors', err: String(e) })
   }
 }
 
@@ -148,7 +142,7 @@ async function handleUpsert(
         { zoho_category_id: item.category_id, category_name: item.category_name },
         { onConflict: 'zoho_category_id', ignoreDuplicates: false }
       )
-    if (catErr) console.warn(`Category upsert warning (${itemId}):`, catErr.message)
+    if (catErr) logger.warn('CATEGORY_WARN', { item_id: itemId, err: catErr.message })
   }
 
   // ── 2. Upsert brand if present ─────────────────────────────────────────────
@@ -156,11 +150,10 @@ async function handleUpsert(
     const { error: brandErr } = await supabase
       .from('brands')
       .upsert({ brand_name: item.brand.trim() }, { onConflict: 'brand_name', ignoreDuplicates: true })
-    if (brandErr) console.warn(`Brand upsert warning (${itemId}):`, brandErr.message)
+    if (brandErr) logger.warn('BRAND_WARN', { item_id: itemId, err: brandErr.message })
   }
 
-  // ── 3. Upsert the item row ─────────────────────────────────────────────────
-  // Field mapping mirrors sync-items/index.ts so both sync paths are consistent.
+  // ── 3. Build item row ──────────────────────────────────────────────────────
   const itemRow = {
     zoho_item_id:              itemId,
     item_name:                 item.name,
@@ -195,11 +188,33 @@ async function handleUpsert(
     updated_at:                new Date().toISOString(),
   }
 
+  // ── 4. Delta: fetch existing record and log what changed ───────────────────
+  const { data: existing } = await supabase
+    .from('items')
+    .select(WATCHED_FIELDS.join(','))
+    .eq('zoho_item_id', itemId)
+    .maybeSingle()
+
+  const { op, changed, changedCount } = computeDelta(
+    existing as Record<string, unknown> | null,
+    itemRow as unknown as Record<string, unknown>,
+    WATCHED_FIELDS
+  )
+  if (op === 'insert') {
+    logger.info('DELTA', { item_id: itemId, op: 'insert' })
+  } else if (changedCount === 0) {
+    logger.info('DELTA', { item_id: itemId, op: 'update', changed: 0, note: 'no watched fields changed' })
+  } else {
+    logger.info('DELTA', { item_id: itemId, op: 'update', changed: changedCount, ...changed })
+  }
+
+  // ── 5. Upsert the item row ─────────────────────────────────────────────────
   const { error: itemErr } = await supabase
     .from('items')
     .upsert(itemRow, { onConflict: 'zoho_item_id' })
 
   if (itemErr) {
+    logger.error('UPSERT_FAIL', { item_id: itemId, event: eventType, err: itemErr.message })
     await logError(supabase, {
       event_type: eventType,
       zoho_entity_id: itemId,
@@ -209,25 +224,19 @@ async function handleUpsert(
     throw itemErr
   }
 
-  // ── 4. Sync warehouse locations ────────────────────────────────────────────
-  // Delete-then-insert (not UPSERT) because we must replace the full set of
-  // locations atomically. A partial update leaves stale rows for any warehouse
-  // that was removed. Crucially, the delete runs even when warehouses=[] so
-  // that removing all locations from an item is correctly reflected.
-  // The item row already exists at this point, so the FK constraint is satisfied.
+  // ── 6. Sync warehouse locations ────────────────────────────────────────────
+  // Delete-then-insert so that removing a warehouse is correctly reflected.
   const warehouses: ZohoWarehouse[] = item.warehouses ?? []
 
-  // Always delete existing locations — catches the "all warehouses removed" case
   const { error: delErr } = await supabase
     .from('item_locations')
     .delete()
     .eq('zoho_item_id', itemId)
 
   if (delErr) {
-    console.warn(`item_locations delete warning (${itemId}):`, delErr.message)
+    logger.warn('LOCATIONS_DEL_WARN', { item_id: itemId, err: delErr.message })
   }
 
-  // Only insert if there are warehouses to sync
   const locationRows = warehouses
     .filter((w) => w.warehouse_id)
     .map((w) => ({
@@ -248,8 +257,7 @@ async function handleUpsert(
       .insert(locationRows)
 
     if (locErr) {
-      // Non-fatal: item is already saved; log but don't fail the whole request
-      console.warn(`item_locations insert warning (${itemId}):`, locErr.message)
+      logger.warn('LOCATIONS_INS_WARN', { item_id: itemId, count: locationRows.length, err: locErr.message })
       await logError(supabase, {
         event_type: eventType,
         zoho_entity_id: itemId,
@@ -259,7 +267,14 @@ async function handleUpsert(
     }
   }
 
-  console.log(`[items-webhook] ${eventType} OK — item_id=${itemId}, warehouses=${locationRows.length}`)
+  logger.info('DONE', {
+    item_id: itemId,
+    event: eventType,
+    op,
+    changed: changedCount,
+    warehouses: locationRows.length,
+  })
+  return { op, changed, changedCount }
 }
 
 // ── Delete handler (soft-delete) ─────────────────────────────────────────────
@@ -272,15 +287,15 @@ async function handleDelete(
   const itemId = item.item_id
   if (!itemId) throw new Error('Missing item_id in delete payload')
 
-  // Soft-delete: mark item inactive rather than hard-deleting.
-  // Preserves pricebook rows, order line items, and any other FKs that
-  // reference this item. Hard-delete would cascade-destroy sales history.
+  logger.info('DELETE', { item_id: itemId, note: 'soft-deleting item + locations' })
+
   const { error: itemErr } = await supabase
     .from('items')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_item_id', itemId)
 
   if (itemErr) {
+    logger.error('DELETE_FAIL', { item_id: itemId, err: itemErr.message })
     await logError(supabase, {
       event_type: 'deleted',
       zoho_entity_id: itemId,
@@ -290,40 +305,39 @@ async function handleDelete(
     throw itemErr
   }
 
-  // Deactivate all warehouse location rows for this item.
-  // location_status is the per-location field (mirrors Zoho's warehouse status field).
   const { error: locErr } = await supabase
     .from('item_locations')
     .update({ location_status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_item_id', itemId)
 
   if (locErr) {
-    // Non-fatal: item is already deactivated; log and continue.
-    console.warn(`[items-webhook] item_locations deactivate-on-delete warning (${itemId}):`, locErr.message)
+    logger.warn('LOCATIONS_DEACTIVATE_WARN', { item_id: itemId, err: locErr.message })
   }
 
-  console.log(`[items-webhook] soft-deleted OK — item_id=${itemId}`)
+  logger.info('DONE', { item_id: itemId, event: 'deleted', op: 'soft-delete' })
+  return { op: 'soft-delete' as const, changed: {}, changedCount: 0 }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
+  const t0 = Date.now()
+
   // ── Auth ───────────────────────────────────────────────────────────────────
   const expectedToken = Deno.env.get('ZOHO_WEBHOOK_TOKEN_ITEMS')
   if (!expectedToken) {
-    // Misconfigured deployment — log clearly so ops can diagnose, still reject
-    console.error('[items-webhook] ZOHO_WEBHOOK_TOKEN_ITEMS env var is not set')
+    logger.error('AUTH_FAIL', { reason: 'ZOHO_WEBHOOK_TOKEN_ITEMS env var not set' })
     return new Response('Unauthorized', { status: 401 })
   }
 
   const receivedToken = req.headers.get('x-zoho-webhook-token')
   if (!receivedToken) {
-    console.warn('[items-webhook] 401 — x-zoho-webhook-token header is MISSING from request. Zoho custom header not configured.')
+    logger.warn('AUTH_FAIL', { reason: 'x-zoho-webhook-token header missing' })
     return new Response('Unauthorized', { status: 401 })
   }
   if (receivedToken !== expectedToken) {
     const masked = `${receivedToken.slice(0, 4)}...${receivedToken.slice(-4)}`
-    console.warn(`[items-webhook] 401 — token MISMATCH. Received: "${masked}" (len=${receivedToken.length}), Expected len=${expectedToken.length}`)
+    logger.warn('AUTH_FAIL', { reason: 'token mismatch', received_masked: masked, expected_len: expectedToken.length })
     return new Response('Unauthorized', { status: 401 })
   }
 
@@ -332,15 +346,10 @@ serve(async (req: Request) => {
   try {
     rawPayload = await req.json()
   } catch {
-    console.error('[items-webhook] Failed to parse JSON body')
-    // Malformed body — return 200 anyway (Zoho should not retry parse failures)
+    logger.error('PARSE_FAIL', { reason: 'invalid JSON body' })
     return new Response('OK', { status: 200 })
   }
 
-  // Resolve event type: check JSON body first, then fall back to URL query param.
-  // Zoho Books sends the raw entity object as the body — it does NOT embed event_type
-  // in the JSON. The 'action' query param is configured by us in Zoho's webhook URL
-  // (e.g. ?action=upsert or ?action=delete) to signal the event type.
   const url = new URL(req.url)
   const rawEventType = rawPayload.event_type
     ?? rawPayload.webhook_event
@@ -348,28 +357,23 @@ serve(async (req: Request) => {
     ?? undefined
   const eventType = normaliseEventType(rawEventType)
 
+  logger.info('RECV', { event_raw: rawEventType ?? '(none)', event: eventType ?? 'unknown', url: url.pathname + url.search })
+
   if (!eventType) {
-    console.error(`[items-webhook] Unknown event_type: "${rawEventType}" — add ?action=upsert or ?action=delete to the Zoho webhook URL`)
+    logger.error('PARSE_FAIL', { reason: `unknown event_type "${rawEventType}"`, hint: 'add ?action=upsert or ?action=delete to the Zoho webhook URL' })
     return new Response('OK', { status: 200 })
   }
 
-  // Zoho Books wraps the entity under a module-named key in the webhook body,
-  // mirroring their REST API shape: { "item": { "item_id": "...", ... } }.
-  // Fall back chain: rawPayload.item → rawPayload.data → rawPayload (top-level).
   const raw = rawPayload as Record<string, unknown>
-  const item = (
-    raw['item'] ?? raw['data'] ?? rawPayload
-  ) as ZohoItemPayload | undefined
+  const item = (raw['item'] ?? raw['data'] ?? rawPayload) as ZohoItemPayload | undefined
   if (!item?.item_id) {
-    console.error('[items-webhook] Cannot extract item_id from payload:', JSON.stringify(rawPayload))
+    logger.error('PARSE_FAIL', { reason: 'cannot extract item_id', payload_keys: Object.keys(raw) })
     return new Response('OK', { status: 200 })
   }
 
-  console.log(`[items-webhook] Received event="${eventType}" item_id="${item.item_id}"`)
+  logger.info('PARSE', { item_id: item.item_id, event: eventType, name: item.name, sku: item.sku })
 
   // ── Process ────────────────────────────────────────────────────────────────
-  // Create a fresh client per request — Edge Functions are stateless and
-  // reusing a module-level singleton risks cross-request token contamination.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -377,15 +381,35 @@ serve(async (req: Request) => {
   )
 
   try {
-    if (eventType === 'deleted') {
-      await handleDelete(supabase, item, rawPayload)
-    } else {
-      // 'created' or 'updated' — same upsert path
-      await handleUpsert(supabase, item, eventType, rawPayload)
-    }
+    const result = eventType === 'deleted'
+      ? await handleDelete(supabase, item, rawPayload)
+      : await handleUpsert(supabase, item, eventType, rawPayload)
+
+    await logEvent({
+      supabase,
+      webhook_type:   'items',
+      event_type:     eventType,
+      zoho_entity_id: item.item_id,
+      op:             result.op,
+      changed_count:  result.changedCount,
+      changed_fields: result.changed,
+      status:         'success',
+      duration_ms:    logger.elapsed(t0),
+    })
   } catch (err) {
-    // Error already logged inside handlers; return 200 to stop Zoho retries.
-    console.error(`[items-webhook] Processing error (${eventType}):`, err)
+    const duration_ms = logger.elapsed(t0)
+    logger.error('HANDLER_FAIL', { item_id: item.item_id, event: eventType, err: String(err), duration_ms })
+    await logEvent({
+      supabase,
+      webhook_type:   'items',
+      event_type:     eventType,
+      zoho_entity_id: item.item_id,
+      op:             null,
+      changed_count:  null,
+      changed_fields: null,
+      status:         'error',
+      duration_ms,
+    })
   }
 
   return new Response('OK', { status: 200 })

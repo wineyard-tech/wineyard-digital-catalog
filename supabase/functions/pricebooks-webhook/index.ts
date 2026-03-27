@@ -13,10 +13,12 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getZohoToken, zohoGet } from '../_shared/zoho-client.ts'
+import { makeLogger, logEvent } from '../_shared/logger.ts'
 
+const logger = makeLogger('[pricebooks-webhook]')
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
-function dec(val: any): number | null {
+function dec(val: unknown): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : n
@@ -38,7 +40,7 @@ interface ZohoWebhookPayload {
   event_type?: string
   operation?: string
   pricebook?: ZohoPricebookPayload
-  pricebook_id?: string // sometimes top-level on delete
+  pricebook_id?: string
 }
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -49,6 +51,8 @@ async function handleUpsert(
   pricebookName: string
 ): Promise<void> {
   // 1. Upsert pricebook metadata
+  logger.info('CATALOG_UPSERT', { pricebook_id: pricebookId, name: pricebookName })
+
   const { error: catalogErr } = await supabase
     .from('pricebook_catalog')
     .upsert({
@@ -60,46 +64,49 @@ async function handleUpsert(
     }, { onConflict: 'zoho_pricebook_id' })
 
   if (catalogErr) {
-    console.error(`handleUpsert: catalog upsert failed for ${pricebookId}:`, catalogErr.message)
+    logger.error('CATALOG_UPSERT_FAIL', { pricebook_id: pricebookId, err: catalogErr.message })
     return
   }
 
   // 2. Fetch full pricebook with item prices from Zoho (webhook payload may be partial)
+  logger.info('ZOHO_FETCH', { pricebook_id: pricebookId, note: 'fetching full pricebook detail from Zoho' })
+
   let token: string
   try {
     token = await getZohoToken(supabase)
   } catch (e) {
-    console.error('handleUpsert: token fetch failed:', String(e))
+    logger.error('TOKEN_FAIL', { pricebook_id: pricebookId, err: String(e) })
     return
   }
 
-  let pbDetail: any
+  let pbDetail: Record<string, unknown>
   try {
     pbDetail = await zohoGet(`/pricebooks/${pricebookId}`, token, ORG_ID)
   } catch (e) {
-    console.error(`handleUpsert: detail fetch failed for ${pricebookId}:`, String(e))
+    logger.error('ZOHO_FETCH_FAIL', { pricebook_id: pricebookId, err: String(e) })
     return
   }
 
-  const pbItems: ZohoPricebookItem[] = pbDetail?.pricebook?.items ?? []
+  const pbItems: ZohoPricebookItem[] = (pbDetail as Record<string, unknown> & { pricebook?: { items?: ZohoPricebookItem[] } })?.pricebook?.items ?? []
+  logger.info('ZOHO_FETCH_OK', { pricebook_id: pricebookId, item_count: pbItems.length })
+
   if (pbItems.length === 0) {
-    console.log(`handleUpsert: pricebook ${pricebookId} has no items, skipping price upsert`)
+    logger.info('DONE', { pricebook_id: pricebookId, note: 'no items — skipping price upsert' })
     return
   }
 
-  // 3. Failsafe — ensure all referenced items exist (stubs for unknown items)
+  // 3. Failsafe — ensure all referenced items exist locally (create stubs for unknowns)
   const itemIds = pbItems.map(i => i.item_id)
-
   const { data: existingItems } = await supabase
     .from('items')
     .select('zoho_item_id')
     .in('zoho_item_id', itemIds)
 
-  const existingSet = new Set((existingItems ?? []).map((r: any) => r.zoho_item_id))
+  const existingSet = new Set((existingItems ?? []).map((r: Record<string, unknown>) => r.zoho_item_id as string))
   const missingIds = itemIds.filter(id => !existingSet.has(id))
 
   if (missingIds.length > 0) {
-    console.log(`handleUpsert: creating ${missingIds.length} stub items for pricebook ${pricebookId}`)
+    logger.warn('STUBS', { pricebook_id: pricebookId, count: missingIds.length, ids: missingIds })
     for (const id of missingIds) {
       const { error: stubErr } = await supabase
         .from('items')
@@ -112,17 +119,20 @@ async function handleUpsert(
           updated_at: new Date().toISOString(),
         }, { onConflict: 'zoho_item_id', ignoreDuplicates: true })
 
-      if (stubErr) console.warn(`Stub item ${id}:`, stubErr.message)
+      if (stubErr) logger.warn('STUB_WARN', { item_id: id, err: stubErr.message })
     }
   }
 
-  // 4. Upsert item prices in batches
+  // 4. Upsert item prices in batches of 200
   const priceRows = pbItems.map(pi => ({
     zoho_pricebook_id: pricebookId,
     zoho_item_id: pi.item_id,
     custom_rate: dec(pi.rate) ?? 0,
     updated_at: new Date().toISOString(),
   }))
+
+  let upsertedCount = 0
+  let failedCount = 0
 
   for (let i = 0; i < priceRows.length; i += 200) {
     const batch = priceRows.slice(i, i + 200)
@@ -131,38 +141,48 @@ async function handleUpsert(
       .upsert(batch, { onConflict: 'zoho_pricebook_id,zoho_item_id' })
 
     if (priceErr) {
-      // Retry row-by-row to isolate failures
+      logger.warn('PRICES_BATCH_WARN', { pricebook_id: pricebookId, batch_start: i, err: priceErr.message, note: 'falling back to row-by-row' })
+      // Retry row-by-row to isolate individual failures
       for (const row of batch) {
         const { error: rowErr } = await supabase
           .from('pricebook_items')
           .upsert(row, { onConflict: 'zoho_pricebook_id,zoho_item_id' })
-        if (rowErr) console.warn(`Price row ${pricebookId}/${row.zoho_item_id}:`, rowErr.message)
+        if (rowErr) {
+          logger.warn('PRICE_ROW_WARN', { pricebook_id: pricebookId, item_id: row.zoho_item_id, err: rowErr.message })
+          failedCount++
+        } else {
+          upsertedCount++
+        }
       }
+    } else {
+      upsertedCount += batch.length
     }
   }
 
-  console.log(`handleUpsert: done for pricebook ${pricebookId}, ${priceRows.length} prices upserted`)
+  logger.info('DONE', { pricebook_id: pricebookId, upserted: upsertedCount, failed: failedCount })
+  return { upsertedCount, failedCount }
 }
 
 async function handleDelete(supabase: SupabaseClient, pricebookId: string): Promise<void> {
-  // Soft-delete: mark inactive rather than hard-delete to preserve audit trail.
-  // ON DELETE CASCADE on pricebook_items will handle cleanup if needed later.
+  logger.info('DELETE', { pricebook_id: pricebookId, note: 'soft-deleting — marking is_active=false' })
+
   const { error } = await supabase
     .from('pricebook_catalog')
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq('zoho_pricebook_id', pricebookId)
 
   if (error) {
-    console.error(`handleDelete: failed for ${pricebookId}:`, error.message)
+    logger.error('DELETE_FAIL', { pricebook_id: pricebookId, err: error.message })
   } else {
-    console.log(`handleDelete: pricebook ${pricebookId} marked inactive`)
+    logger.info('DONE', { pricebook_id: pricebookId, event: 'deleted', op: 'soft-delete' })
   }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
-  // Always return 200 to prevent Zoho from re-delivering
+  const t0 = Date.now()
+
   if (req.method !== 'POST') {
     return new Response('OK', { status: 200 })
   }
@@ -171,7 +191,7 @@ serve(async (req) => {
   try {
     payload = await req.json()
   } catch {
-    console.warn('pricebooks-webhook: invalid JSON payload')
+    logger.error('PARSE_FAIL', { reason: 'invalid JSON body' })
     return new Response('OK', { status: 200 })
   }
 
@@ -180,35 +200,65 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   )
 
-  // Normalise event type — Zoho sends either snake_case or PascalCase
   const rawEvent = (payload.event_type ?? payload.operation ?? '').toLowerCase()
   const isDelete = rawEvent.includes('delete')
   const isUpsert = rawEvent.includes('create') || rawEvent.includes('update')
 
-  const pricebookId =
-    payload.pricebook?.pricebook_id ?? payload.pricebook_id ?? ''
-  const pricebookName =
-    payload.pricebook?.pricebook_name ?? `Pricebook ${pricebookId}`
+  const pricebookId   = payload.pricebook?.pricebook_id ?? payload.pricebook_id ?? ''
+  const pricebookName = payload.pricebook?.pricebook_name ?? `Pricebook ${pricebookId}`
+
+  logger.info('RECV', { event_raw: rawEvent || '(none)', pricebook_id: pricebookId || '(missing)' })
 
   if (!pricebookId) {
-    console.warn('pricebooks-webhook: missing pricebook_id in payload', JSON.stringify(payload))
+    logger.error('PARSE_FAIL', { reason: 'missing pricebook_id', payload_keys: Object.keys(payload) })
     return new Response('OK', { status: 200 })
   }
 
-  console.log(`pricebooks-webhook: ${rawEvent} for pricebook ${pricebookId}`)
+  logger.info('PARSE', { pricebook_id: pricebookId, name: pricebookName, is_delete: isDelete, is_upsert: isUpsert })
 
   try {
     if (isDelete) {
       await handleDelete(supabase, pricebookId)
-    } else if (isUpsert) {
-      await handleUpsert(supabase, pricebookId, pricebookName)
+      await logEvent({
+        supabase,
+        webhook_type:   'pricebooks',
+        event_type:     'deleted',
+        zoho_entity_id: pricebookId,
+        op:             'soft-delete',
+        changed_count:  null,
+        changed_fields: null,
+        status:         'success',
+        duration_ms:    logger.elapsed(t0),
+      })
     } else {
-      console.warn(`pricebooks-webhook: unknown event_type "${rawEvent}", treating as upsert`)
-      await handleUpsert(supabase, pricebookId, pricebookName)
+      if (!isUpsert) logger.warn('UNKNOWN_EVENT', { event_raw: rawEvent, note: 'treating as upsert' })
+      const { upsertedCount, failedCount } = await handleUpsert(supabase, pricebookId, pricebookName)
+      await logEvent({
+        supabase,
+        webhook_type:   'pricebooks',
+        event_type:     rawEvent || 'upsert',
+        zoho_entity_id: pricebookId,
+        op:             'update',
+        changed_count:  upsertedCount,
+        changed_fields: failedCount > 0 ? { failed_rows: { from: null, to: failedCount } } : null,
+        status:         'success',
+        duration_ms:    logger.elapsed(t0),
+      })
     }
   } catch (err) {
-    // Log but never fail — Zoho must receive 200
-    console.error('pricebooks-webhook: unhandled error:', String(err))
+    const duration_ms = logger.elapsed(t0)
+    logger.error('HANDLER_FAIL', { pricebook_id: pricebookId, event: rawEvent, err: String(err), duration_ms })
+    await logEvent({
+      supabase,
+      webhook_type:   'pricebooks',
+      event_type:     rawEvent || 'unknown',
+      zoho_entity_id: pricebookId,
+      op:             null,
+      changed_count:  null,
+      changed_fields: null,
+      status:         'error',
+      duration_ms,
+    })
   }
 
   return new Response('OK', { status: 200 })
