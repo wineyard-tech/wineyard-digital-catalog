@@ -1,0 +1,137 @@
+{
+  "_comment": "Mock Zoho Books webhook payloads for local testing of contacts-webhook. Use with: curl -X POST http://localhost:54321/functions/v1/contacts-webhook -H 'x-zoho-webhook-token: test-token' -H 'Content-Type: application/json' -d @<payload-file.json> (pick one payload at a time)",
+
+  "create_contact_with_persons": {
+    "event_type": "contact_created",
+    "data": {
+      "contact_id": "4600000099001",
+      "contact_name": "Ravi Kumar Security Systems",
+      "company_name": "Ravi Kumar Security Systems Pvt Ltd",
+      "contact_type": "customer",
+      "status": "active",
+      "primary_contact_person_id": "4600000099101",
+      "pricebook_id": "4600000005001",
+      "mobile": "9876543210",
+      "phone": "",
+      "email": "ravi@rkss.in",
+      "billing_address": {
+        "address": "12-3-456, Banjara Hills",
+        "city": "Hyderabad",
+        "state": "Telangana",
+        "zip": "500034",
+        "country": "India",
+        "phone": ""
+      },
+      "shipping_address": {
+        "address": "12-3-456, Banjara Hills",
+        "city": "Hyderabad",
+        "state": "Telangana",
+        "zip": "500034",
+        "country": "India"
+      },
+      "payment_terms": 30,
+      "payment_terms_label": "Net 30",
+      "currency_id": "4600000000099",
+      "currency_code": "INR",
+      "custom_fields": {
+        "gst_number": "36AABCR1234P1Z5",
+        "integrator_tier": "silver"
+      },
+      "contact_persons": [
+        {
+          "contact_person_id": "4600000099101",
+          "first_name": "Ravi",
+          "last_name": "Kumar",
+          "email": "ravi@rkss.in",
+          "phone": "",
+          "mobile": "9876543210",
+          "is_primary_contact": true,
+          "communication_preference": "email"
+        },
+        {
+          "contact_person_id": "4600000099102",
+          "first_name": "Priya",
+          "last_name": "Kumar",
+          "email": "priya@rkss.in",
+          "phone": "04023456789",
+          "mobile": "9876543211",
+          "is_primary_contact": false,
+          "communication_preference": "phone"
+        }
+      ],
+      "created_time": "2026-03-19T10:00:00+0530",
+      "last_modified_time": "2026-03-19T10:00:00+0530"
+    }
+  },
+
+  "update_contact_pricebook_change": {
+    "event_type": "contact_updated",
+    "data": {
+      "contact_id": "4600000099001",
+      "contact_name": "Ravi Kumar Security Systems",
+      "company_name": "Ravi Kumar Security Systems Pvt Ltd",
+      "contact_type": "customer",
+      "status": "active",
+      "primary_contact_person_id": "4600000099101",
+      "pricebook_id": "4600000005002",
+      "mobile": "9876543210",
+      "phone": "",
+      "email": "ravi@rkss.in",
+      "billing_address": {
+        "address": "12-3-456, Banjara Hills",
+        "city": "Hyderabad",
+        "state": "Telangana",
+        "zip": "500034",
+        "country": "India"
+      },
+      "shipping_address": {
+        "address": "12-3-456, Banjara Hills",
+        "city": "Hyderabad",
+        "state": "Telangana",
+        "zip": "500034",
+        "country": "India"
+      },
+      "payment_terms": 45,
+      "payment_terms_label": "Net 45",
+      "currency_id": "4600000000099",
+      "currency_code": "INR",
+      "custom_fields": {
+        "gst_number": "36AABCR1234P1Z5",
+        "integrator_tier": "gold"
+      },
+      "contact_persons": [
+        {
+          "contact_person_id": "4600000099101",
+          "first_name": "Ravi",
+          "last_name": "Kumar",
+          "email": "ravi@rkss.in",
+          "phone": "",
+          "mobile": "9876543210",
+          "is_primary_contact": true,
+          "communication_preference": "email"
+        },
+        {
+          "contact_person_id": "4600000099103",
+          "first_name": "Suresh",
+          "last_name": "Reddy",
+          "email": "suresh@rkss.in",
+          "phone": "",
+          "mobile": "9876543212",
+          "is_primary_contact": false,
+          "communication_preference": "phone"
+        }
+      ],
+      "created_time": "2026-03-19T10:00:00+0530",
+      "last_modified_time": "2026-03-19T14:30:00+0530"
+    }
+  },
+
+  "delete_contact": {
+    "event_type": "contact_deleted",
+    "data": {
+      "contact_id": "4600000099001",
+      "contact_name": "Ravi Kumar Security Systems",
+      "status": "inactive"
+    }
+  }
+}

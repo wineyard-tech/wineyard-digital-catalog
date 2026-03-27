@@ -1,5 +1,8 @@
 // sync-contacts Edge Function
-// Fetches all active contacts from Zoho Books and upserts into contacts + contact_persons tables.
+// Incremental sync: fetches only contacts modified since yesterday 03:55 AM IST.
+// Runs daily at 04:05 AM IST via pg_cron (5 min after sync-items to avoid Zoho rate limits).
+// The 5-minute overlap on the cutoff time prevents records modified on the exact boundary
+// from being missed.
 //
 // Phone extraction priority per contact:
 //   contact.mobile → contact.phone → billing_address.phone
@@ -8,11 +11,15 @@
 //
 // All phones normalized to E.164 (+91XXXXXXXXXX).
 // Contacts with no resolvable phone are skipped (cannot receive OTP).
+//
+// Uses streamZohoPages (async generator) to pipeline fetch + upsert per page.
+// This avoids collecting all contacts into memory before writing,
+// keeping memory flat and fitting within the 150s Edge Function timeout.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getZohoToken, fetchAllZohoPages } from '../_shared/zoho-client.ts'
-import { normalizeIndianPhone, extractPhoneFromContact } from '../_shared/phone-normalizer.ts'
+import { getZohoToken, streamZohoPages, getLastModifiedFilter } from '../_shared/zoho-client.ts'
+import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
@@ -27,7 +34,7 @@ serve(async (req) => {
   )
 
   try {
-    // Optional: pass {"test_limit": 50} in body to cap contacts for local testing
+    // Optional: pass {"test_limit": N} in body to cap contacts for local testing
     let testLimit: number | null = null
     try {
       const body = await req.json()
@@ -36,111 +43,170 @@ serve(async (req) => {
 
     const token = await getZohoToken(supabase)
 
-    // Fetch active customers — capped to test_limit pages if set
-    const maxPages = testLimit ? Math.ceil(testLimit / 200) : 100
-    let zohoContacts = await fetchAllZohoPages<any>(
+    // Fetch only contacts modified since yesterday 03:55 AM IST (incremental sync)
+    const lastModified = getLastModifiedFilter()
+    console.log(`Fetching contacts modified since ${lastModified}`)
+
+    let totalSynced = 0
+    let totalSkipped = 0
+    let totalPersonsSynced = 0
+    let pageCount = 0
+    let lastPageSeen = 0
+    const startTime = Date.now()
+    const TIME_BUDGET = 110_000   // 110s — 40s buffer before 150s hard limit
+
+    // ── Stream one page at a time: fetch → build → upsert → next page ────────
+    // This pipelines network I/O with DB writes instead of collect-then-process,
+    // keeping memory flat and total runtime well under the 150s timeout.
+    for await (const { rows: zohoContacts, page, hasMore } of streamZohoPages<any>(
       '/contacts',
       token,
       ORG_ID,
       'contacts',
-      { filter_by: 'Status.Active', contact_type: 'customer' },
-      maxPages
-    )
-    if (testLimit) zohoContacts = zohoContacts.slice(0, testLimit)
+      { filter_by: 'Status.Active', contact_type: 'customer', last_modified_time: lastModified }
+    )) {
+      pageCount++
 
-    console.log(`Fetched ${zohoContacts.length} contacts from Zoho${testLimit ? ` (test_limit: ${testLimit})` : ''}`)
+      // Apply test_limit: stop after we have enough
+      const slice = testLimit
+        ? zohoContacts.slice(0, Math.max(0, testLimit - totalSynced - totalSkipped))
+        : zohoContacts
+      if (slice.length === 0) break
 
-    // ── Build rows in memory (no DB calls per contact) ────────────────────────
-    const contactRows: any[] = []
-    const personRows: any[] = []
-    let skipped = 0
+      // ── Build rows for this page ────────────────────────────────────────────
+      const contactRows: any[] = []
+      const personRows: any[] = []
 
-    for (const contact of zohoContacts) {
-      const phone = extractPhoneFromContact(contact)
+      for (const contact of slice) {
+        const phoneResult = extractPhoneFromContact(contact)
 
-      if (!phone) {
-        console.warn(`Skipping "${contact.contact_name}" (${contact.contact_id}): no valid phone`)
-        skipped++
-        continue
-      }
+        if (!phoneResult) {
+          console.warn(`Skipping "${contact.contact_name}" (${contact.contact_id}): no valid phone — ${describeContactPhones(contact)}`)
+          totalSkipped++
+          continue
+        }
 
-      contactRows.push({
-        zoho_contact_id: contact.contact_id,
-        contact_name: contact.contact_name,
-        company_name: contact.company_name || null,
-        contact_type: contact.contact_type || 'customer',
-        status: contact.status ?? 'active',
-        primary_contact_person_id: contact.primary_contact_person_id || null,
-        pricebook_id: contact.pricebook_id || null, // stored; not used for pricing in Phase 1
-        phone,
-        email: contact.email || null,
-        billing_address: contact.billing_address ?? null,
-        shipping_address: contact.shipping_address ?? null,
-        payment_terms: contact.payment_terms ?? null,
-        payment_terms_label: contact.payment_terms_label || null,
-        currency_id: contact.currency_id || null,
-        currency_code: contact.currency_code || 'INR',
-        custom_fields: contact.custom_fields ?? {},
-        created_time: contact.created_time || null,
-        last_modified_time: contact.last_modified_time || null,
-        updated_at: new Date().toISOString(),
-      })
+        const { phone, source: phoneSource } = phoneResult
+        if (phoneSource !== 'contact.mobile' && phoneSource !== 'contact.phone') {
+          console.log(`"${contact.contact_name}" phone from ${phoneSource}: ${phone}`)
+        }
 
-      for (const person of (contact.contact_persons ?? [])) {
-        if (!person.contact_person_id) continue
-        personRows.push({
-          zoho_contact_person_id: person.contact_person_id,
+        contactRows.push({
           zoho_contact_id: contact.contact_id,
-          first_name: person.first_name || null,
-          last_name: person.last_name || null,
-          email: person.email || null,
-          phone: normalizeIndianPhone(person.phone),
-          mobile: normalizeIndianPhone(person.mobile),
-          is_primary: person.is_primary_contact ?? false,
-          communication_preference: person.communication_preference ?? null,
+          contact_name: contact.contact_name,
+          company_name: contact.company_name || null,
+          contact_type: contact.contact_type || 'customer',
+          status: contact.status ?? 'active',
+          primary_contact_person_id: contact.primary_contact_person_id || null,
+          pricebook_id: contact.pricebook_id || null,
+          phone,
+          email: contact.email || null,
+          billing_address: contact.billing_address ?? null,
+          shipping_address: contact.shipping_address ?? null,
+          payment_terms: contact.payment_terms ?? null,
+          payment_terms_label: contact.payment_terms_label || null,
+          currency_id: contact.currency_id || null,
+          currency_code: contact.currency_code || 'INR',
+          custom_fields: contact.custom_fields ?? {},
+          created_time: contact.created_time || null,
+          last_modified_time: contact.last_modified_time || null,
+          updated_at: new Date().toISOString(),
         })
-      }
-    }
 
-    // ── Batch upsert contacts (row-by-row fallback on phone conflict) ─────────
-    let synced = 0
-    for (let i = 0; i < contactRows.length; i += 100) {
-      const batch = contactRows.slice(i, i + 100)
-      const { error } = await supabase
-        .from('contacts')
-        .upsert(batch, { onConflict: 'zoho_contact_id' })
-
-      if (!error) { synced += batch.length; continue }
-
-      // Fallback: row-by-row to isolate duplicate phone conflicts
-      for (const row of batch) {
-        const { error: rowErr } = await supabase
-          .from('contacts')
-          .upsert(row, { onConflict: 'zoho_contact_id' })
-        if (rowErr) {
-          console.warn(`Skipping "${row.contact_name}": ${rowErr.message}`)
-          skipped++
-        } else {
-          synced++
+        for (const person of (contact.contact_persons ?? [])) {
+          if (!person.contact_person_id) continue
+          personRows.push({
+            zoho_contact_person_id: person.contact_person_id,
+            zoho_contact_id: contact.contact_id,
+            first_name: person.first_name || null,
+            last_name: person.last_name || null,
+            email: person.email || null,
+            phone: normalizeIndianPhone(person.phone),
+            mobile: normalizeIndianPhone(person.mobile),
+            is_primary: person.is_primary_contact ?? false,
+            communication_preference: person.communication_preference ?? null,
+          })
         }
       }
-    }
 
-    // ── Batch upsert contact persons ──────────────────────────────────────────
-    let personsSynced = 0
-    for (let i = 0; i < personRows.length; i += 100) {
-      const batch = personRows.slice(i, i + 100)
-      const { error } = await supabase
-        .from('contact_persons')
-        .upsert(batch, { onConflict: 'zoho_contact_person_id' })
-      if (error) console.warn(`Contact persons batch warning: ${error.message}`)
-      else personsSynced += batch.length
+      // ── Upsert contacts for this page ───────────────────────────────────────
+      // Track which contact_ids were actually saved so we only insert their
+      // contact_persons (avoids FK violations for skipped contacts).
+      const upsertedContactIds = new Set<string>()
+
+      if (contactRows.length > 0) {
+        const { error } = await supabase
+          .from('contacts')
+          .upsert(contactRows, { onConflict: 'zoho_contact_id' })
+
+        if (error) {
+          // Fallback: row-by-row to isolate duplicate phone conflicts
+          for (const row of contactRows) {
+            const { error: rowErr } = await supabase
+              .from('contacts')
+              .upsert(row, { onConflict: 'zoho_contact_id' })
+            if (rowErr) {
+              console.warn(`Skipping "${row.contact_name}": ${rowErr.message}`)
+              totalSkipped++
+            } else {
+              upsertedContactIds.add(row.zoho_contact_id)
+              totalSynced++
+            }
+          }
+        } else {
+          contactRows.forEach(r => upsertedContactIds.add(r.zoho_contact_id))
+          totalSynced += contactRows.length
+        }
+      }
+
+      // ── Upsert contact persons for this page ────────────────────────────────
+      // Only insert persons whose parent contact was actually saved to avoid FK failures.
+      const safePersonRows = personRows.filter(p => upsertedContactIds.has(p.zoho_contact_id))
+
+      if (safePersonRows.length > 0) {
+        const { error: personErr } = await supabase
+          .from('contact_persons')
+          .upsert(safePersonRows, { onConflict: 'zoho_contact_person_id' })
+
+        if (personErr) {
+          // Fallback: row-by-row to isolate the bad person without losing the rest
+          for (const row of safePersonRows) {
+            const { error: rowErr } = await supabase
+              .from('contact_persons')
+              .upsert(row, { onConflict: 'zoho_contact_person_id' })
+            if (rowErr) {
+              console.warn(`Person ${row.zoho_contact_person_id} (${row.zoho_contact_id}): ${rowErr.message}`)
+            } else {
+              totalPersonsSynced++
+            }
+          }
+        } else {
+          totalPersonsSynced += safePersonRows.length
+        }
+      }
+
+      lastPageSeen = page
+      console.log(`Page ${page}: +${contactRows.length} contacts, +${safePersonRows.length} persons (running total: ${totalSynced})`)
+
+      // Stop early if test_limit reached
+      if (testLimit && (totalSynced + totalSkipped) >= testLimit) break
+
+      // Time-budget check — stop gracefully after current page's writes complete
+      if (hasMore && Date.now() - startTime > TIME_BUDGET) {
+        console.log(`sync-contacts: time budget reached after page ${page}`)
+        break
+      }
+
+      // No more pages
+      if (!hasMore) break
     }
 
     const summary = {
-      contacts_synced: synced,
-      contacts_skipped: skipped,
-      contact_persons_synced: personsSynced,
+      contacts_synced: totalSynced,
+      contacts_skipped: totalSkipped,
+      contact_persons_synced: totalPersonsSynced,
+      pages_fetched: pageCount,
+      last_modified_since: lastModified,
       synced_at: new Date().toISOString(),
     }
 

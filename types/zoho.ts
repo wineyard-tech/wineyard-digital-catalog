@@ -78,13 +78,33 @@ export interface ZohoContact {
   last_modified_time?: string;
 }
 
+/** Lightweight row returned by GET /pricebooks (list endpoint — no items). */
+export interface ZohoPricebookListItem {
+  pricebook_id: string;
+  pricebook_name: string;
+  currency_id?: string;
+  status?: string;
+}
+
+/** Full pricebook returned by GET /pricebooks/{id} (includes item prices). */
 export interface ZohoPricebook {
   pricebook_id: string;
   pricebook_name: string;
+  currency_id?: string;
+  status?: string;
   items: Array<{
     item_id: string;
-    rate: number;
+    name?: string;
+    rate: number;           // custom_rate for this pricebook
+    pricebook_rate?: number; // alias Zoho sometimes returns
   }>;
+}
+
+/** Wrapper returned by GET /pricebooks/{id} */
+export interface ZohoPricebookDetailResponse {
+  code: number;
+  message: string;
+  pricebook: ZohoPricebook;
 }
 
 export interface ZohoTokenResponse {
@@ -109,6 +129,30 @@ export interface ZohoEstimateResponse {
   estimate: {
     estimate_id: string;
     estimate_number: string;
+    status: string;
+    total: number;
+    estimate_url?: string;  // present on GET /estimates/{id}; absent on POST create
+  };
+}
+
+export interface ZohoSalesOrderCreate {
+  customer_id: string;
+  line_items: Array<{
+    item_id: string;
+    name: string;
+    quantity: number;
+    rate: number;
+  }>;
+  reference_number?: string;  // used to link back to an estimate number
+  notes?: string;
+}
+
+export interface ZohoSalesOrderResponse {
+  code: number;
+  message: string;
+  salesorder: {
+    salesorder_id: string;
+    salesorder_number: string;
     status: string;
     total: number;
   };

@@ -1,0 +1,147 @@
+{
+  "_comment": "Mock Zoho Books webhook payloads for local testing of items-webhook. Use with: curl -X POST http://localhost:54321/functions/v1/items-webhook -H 'x-zoho-webhook-token: test-token' -H 'Content-Type: application/json' -d @test-payloads.json (pick one payload at a time)",
+
+  "create_item_with_warehouses": {
+    "event_type": "item_created",
+    "data": {
+      "item_id": "4600000012345",
+      "name": "Hikvision DS-2CD2143G2-I 4MP AcuSense Fixed Dome",
+      "sku": "CAM-HIK-4MP-001",
+      "status": "active",
+      "item_type": "inventory",
+      "product_type": "goods",
+      "rate": 8500.00,
+      "purchase_rate": 6200.00,
+      "description": "4MP AcuSense Fixed Dome Network Camera with IR. IR range 40m. H.265+ compression. Deep learning-based motion detection.",
+      "category_id": "4600000000987",
+      "category_name": "IP Cameras",
+      "brand": "Hikvision",
+      "manufacturer_name": "Hikvision Digital Technology Co., Ltd.",
+      "hsn_or_sac": "85258090",
+      "unit": "pcs",
+      "is_taxable": true,
+      "tax_id": "4600000001234",
+      "tax_name": "GST18",
+      "tax_percentage": 18.0,
+      "track_inventory": true,
+      "available_stock": 45,
+      "actual_available_stock": 45,
+      "reorder_level": 10,
+      "upc": "",
+      "ean": "6941264061298",
+      "part_number": "DS-2CD2143G2-I",
+      "image_documents": [
+        { "image_url": "https://cdn.wineyard.in/items/4600000012345/front.jpg" },
+        { "image_url": "https://cdn.wineyard.in/items/4600000012345/side.jpg" }
+      ],
+      "custom_fields": {
+        "resolution": "4MP",
+        "ir_range_m": 40,
+        "compression": "H.265+"
+      },
+      "warehouses": [
+        {
+          "warehouse_id": "4600000000001",
+          "warehouse_name": "Hyderabad Main",
+          "status": "active",
+          "is_primary": true,
+          "warehouse_stock_on_hand": 30,
+          "warehouse_available_stock": 30,
+          "warehouse_actual_available_stock": 28
+        },
+        {
+          "warehouse_id": "4600000000002",
+          "warehouse_name": "Bangalore Hub",
+          "status": "active",
+          "is_primary": false,
+          "warehouse_stock_on_hand": 10,
+          "warehouse_available_stock": 10,
+          "warehouse_actual_available_stock": 10
+        },
+        {
+          "warehouse_id": "4600000000003",
+          "warehouse_name": "Chennai Depot",
+          "status": "active",
+          "is_primary": false,
+          "warehouse_stock_on_hand": 5,
+          "warehouse_available_stock": 5,
+          "warehouse_actual_available_stock": 7
+        }
+      ],
+      "created_time": "2026-03-19T09:00:00+0530",
+      "last_modified_time": "2026-03-19T09:00:00+0530"
+    }
+  },
+
+  "update_item_stock_change": {
+    "event_type": "item_updated",
+    "data": {
+      "item_id": "4600000012345",
+      "name": "Hikvision DS-2CD2143G2-I 4MP AcuSense Fixed Dome",
+      "sku": "CAM-HIK-4MP-001",
+      "status": "active",
+      "item_type": "inventory",
+      "product_type": "goods",
+      "rate": 9200.00,
+      "purchase_rate": 6500.00,
+      "description": "4MP AcuSense Fixed Dome Network Camera with IR. IR range 40m. H.265+ compression. Deep learning-based motion detection.",
+      "category_id": "4600000000987",
+      "category_name": "IP Cameras",
+      "brand": "Hikvision",
+      "manufacturer_name": "Hikvision Digital Technology Co., Ltd.",
+      "hsn_or_sac": "85258090",
+      "unit": "pcs",
+      "is_taxable": true,
+      "tax_id": "4600000001234",
+      "tax_name": "GST18",
+      "tax_percentage": 18.0,
+      "track_inventory": true,
+      "available_stock": 18,
+      "actual_available_stock": 18,
+      "reorder_level": 10,
+      "upc": "",
+      "ean": "6941264061298",
+      "part_number": "DS-2CD2143G2-I",
+      "image_documents": [
+        { "image_url": "https://cdn.wineyard.in/items/4600000012345/front.jpg" }
+      ],
+      "custom_fields": {
+        "resolution": "4MP",
+        "ir_range_m": 40,
+        "compression": "H.265+"
+      },
+      "warehouses": [
+        {
+          "warehouse_id": "4600000000001",
+          "warehouse_name": "Hyderabad Main",
+          "status": "active",
+          "is_primary": true,
+          "warehouse_stock_on_hand": 15,
+          "warehouse_available_stock": 15,
+          "warehouse_actual_available_stock": 14
+        },
+        {
+          "warehouse_id": "4600000000002",
+          "warehouse_name": "Bangalore Hub",
+          "status": "active",
+          "is_primary": false,
+          "warehouse_stock_on_hand": 3,
+          "warehouse_available_stock": 3,
+          "warehouse_actual_available_stock": 4
+        }
+      ],
+      "created_time": "2026-03-19T09:00:00+0530",
+      "last_modified_time": "2026-03-19T11:30:00+0530"
+    }
+  },
+
+  "delete_item": {
+    "event_type": "item_deleted",
+    "data": {
+      "item_id": "4600000012345",
+      "name": "Hikvision DS-2CD2143G2-I 4MP AcuSense Fixed Dome",
+      "sku": "CAM-HIK-4MP-001",
+      "status": "inactive"
+    }
+  }
+}
