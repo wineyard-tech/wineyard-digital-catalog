@@ -111,6 +111,7 @@ export interface ZohoEstimateResponse {
     estimate_number: string;
     status: string;
     total: number;
+    estimate_url?: string;  // present on GET /estimates/{id}; absent on POST create
   };
 }
 

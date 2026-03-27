@@ -167,6 +167,33 @@ export async function createEstimate(
 }
 
 /**
+ * Fetches the public shareable URL for an existing Zoho estimate.
+ *
+ * The POST /estimates response does not include estimate_url — it is only
+ * available on the GET /estimates/{id} response. This function is a best-effort
+ * wrapper: it returns null on any failure so the caller can proceed without
+ * a URL rather than blocking the estimate flow.
+ */
+export async function getEstimatePublicUrl(zohoEstimateId: string): Promise<string | null> {
+  try {
+    const token = await getAccessToken()
+    const orgId = process.env.ZOHO_ORG_ID!
+
+    const res = await fetch(
+      `${ZOHO_API_BASE}/estimates/${zohoEstimateId}?organization_id=${orgId}`,
+      { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+    )
+
+    if (!res.ok) return null
+
+    const data: ZohoEstimateResponse = await res.json()
+    return data.estimate.estimate_url ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Creates a Sales Order in Zoho Books.
  *
  * Pricing strategy: Sales Orders support pricebook_id at the document level.

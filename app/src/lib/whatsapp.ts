@@ -153,7 +153,8 @@ export async function sendQuotation(
   to: string,
   estimateNumber: string,
   items: CartItem[],
-  totals: QuoteTotals
+  totals: QuoteTotals,
+  estimateUrl?: string | null
 ): Promise<WaSendResult> {
   const fmt = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
@@ -171,6 +172,7 @@ export async function sendQuotation(
     `GST (18%): ${fmt(totals.tax)}\n` +
     `*Total:    ${fmt(totals.total)}*\n` +
     `──────────────────\n` +
+    (estimateUrl ? `View estimate: ${estimateUrl}\n` : '') +
     `Reply *YES* to confirm or call us.`
 
   try {
@@ -183,33 +185,33 @@ export async function sendQuotation(
 
 export interface EstimateTemplateData {
   customerName: string
-  companyName: string
   estimateNumber: string
   items: CartItem[]
   totals: QuoteTotals
+  estimateUrl: string | null    // Zoho public URL; null → plain-text fallback used
+  zohoEstimateId: string        // {{1}} for button — Zoho estimate ID (suffix of estimate_url)
 }
 
 /**
- * Sends the `wineyard_estimate` WABA template with line items and a deep link button.
- * Falls back to sendQuotation (plain text) if the template call fails.
+ * Sends the `wineyard_estimate` WABA template with a Zoho estimate portal button.
+ * Falls back to sendQuotation (plain text + URL) if the template call fails.
  *
- * Template parameters (named variables — parameter_name required by Meta API):
+ * Template parameters (3 named body params):
  *   {{estimate_number}}  = Estimate number (EST-XXXXX)
- *   {{estimate_details}} = Customer name + company + formatted line items
  *   {{total_amount}}     = Total amount (formatted)
- *   {{item_count}}       = Number of items
+ *   {{item_count}}       = Number of line items
  *
- * Button (index 0): "Review in App" URL button — dynamic suffix is the deep link path.
+ * Button (index 0): URL button — dynamic suffix is the Zoho estimate_id.
+ *
+ * NOTE: Template requires Meta re-approval before the 3-param version is live.
+ * Until approved, template calls fail and plain-text fallback is used automatically.
  */
 export async function sendEstimateNotification(
   to: string,
   data: EstimateTemplateData,
-  deepLinkPath: string  // e.g. "cart?estimate_id=<uuid>"
 ): Promise<WaSendResult> {
   const fmt = (n: number) =>
     `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
-
-  const lineItemsText = formatItemsParam(data.items)
 
   try {
     const messageId = await callWhatsAppApi({
@@ -223,24 +225,23 @@ export async function sendEstimateNotification(
             type: 'body',
             parameters: [
               { type: 'text', parameter_name: 'estimate_number', text: data.estimateNumber },
-              { type: 'text', parameter_name: 'estimate_details', text: lineItemsText },
-              { type: 'text', parameter_name: 'total_amount',     text: data.totals.total.toLocaleString('en-IN', { maximumFractionDigits: 0 }) },
-              { type: 'text', parameter_name: 'item_count',       text: String(data.items.length) },
+              { type: 'text', parameter_name: 'total_amount',    text: fmt(data.totals.total) },
+              { type: 'text', parameter_name: 'item_count',      text: String(data.items.length) },
             ],
           },
           {
             type: 'button',
             sub_type: 'url',
             index: '0',
-            parameters: [{ type: 'text', text: deepLinkPath }],
+            parameters: [{ type: 'text', text: data.zohoEstimateId }],
           },
         ],
       },
     })
     return { success: true, messageId }
   } catch (templateErr) {
-    console.warn('[whatsapp] template send failed, falling back to plain text:', templateErr)
-    return sendQuotation(to, data.estimateNumber, data.items, data.totals)
+    console.warn('[whatsapp] estimate template send failed, falling back to plain text:', templateErr)
+    return sendQuotation(to, data.estimateNumber, data.items, data.totals, data.estimateUrl)
   }
 }
 
@@ -335,5 +336,87 @@ export async function sendAdminAlert(message: string): Promise<void> {
     await sendText(adminNumber, message)
   } catch (err) {
     console.error('[whatsapp] admin alert failed:', err)
+  }
+}
+
+export interface AdminLocationNotificationData {
+  locationName: string | null
+  estimateNumber: string
+  contactName: string
+  contactPhone: string
+  contactLocation: string | null   // user's area/city from wl cookie
+  total: number
+  itemCount: number
+  zohoEstimateId: string           // {{1}} for button
+}
+
+/**
+ * Sends a new-estimate notification to the admin WhatsApp number.
+ * Primary: `wineyard_location_notification` WABA template (in Meta review — will fail until approved).
+ * Fallback: plain text matching the template body exactly.
+ * Best-effort — never throws, never blocks the main response.
+ */
+export async function sendAdminLocationNotification(
+  data: AdminLocationNotificationData
+): Promise<void> {
+  const adminNumber = process.env.WHATSAPP_ADMIN_NUMBER
+  if (!adminNumber) {
+    console.warn('[whatsapp] WHATSAPP_ADMIN_NUMBER not set — skipping admin location notification')
+    return
+  }
+
+  const fmt = (n: number) =>
+    `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
+
+  const locationLabel = data.locationName ?? 'Unknown'
+
+  try {
+    await callWhatsAppApi({
+      to: adminNumber,
+      type: 'template',
+      template: {
+        name: 'wineyard_location_notification',
+        language: { code: 'en_IN' },
+        components: [
+          {
+            type: 'body',
+            parameters: [
+              { type: 'text', parameter_name: 'location_name',        text: locationLabel },
+              { type: 'text', parameter_name: 'estimate_number',      text: data.estimateNumber },
+              { type: 'text', parameter_name: 'contact_name',         text: data.contactName },
+              { type: 'text', parameter_name: 'contact_phone_number', text: data.contactPhone },
+              { type: 'text', parameter_name: 'contact_location',     text: data.contactLocation ?? 'Unknown' },
+              { type: 'text', parameter_name: 'total_amount',         text: fmt(data.total) },
+              { type: 'text', parameter_name: 'item_count',           text: String(data.itemCount) },
+            ],
+          },
+          {
+            type: 'button',
+            sub_type: 'url',
+            index: '0',
+            parameters: [{ type: 'text', text: data.zohoEstimateId }],
+          },
+        ],
+      },
+    })
+    return
+  } catch {
+    // Template in review — fall through to plain-text fallback
+  }
+
+  // Plain-text fallback — matches template body exactly
+  try {
+    await sendText(
+      adminNumber,
+      `Hello ${locationLabel},\n\n` +
+      `A new Estimate ${data.estimateNumber} was created for your location. Here are the details.\n\n` +
+      `Customer Name - ${data.contactName}\n` +
+      `Phone Number - ${data.contactPhone}\n` +
+      `Customer Location - ${data.contactLocation ?? 'Unknown'}\n` +
+      `Estimate Details - ${fmt(data.total)} (${data.itemCount} items)\n\n` +
+      `Please respond at the earliest.`
+    )
+  } catch (err) {
+    console.error('[whatsapp] admin location notification fallback failed:', err)
   }
 }

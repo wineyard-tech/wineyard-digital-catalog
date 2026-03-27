@@ -3,8 +3,12 @@ import type { NextRequest } from 'next/server'
 import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { createEstimate } from '@/lib/zoho'
-import { sendEstimateNotification, sendAdminAlert } from '@/lib/whatsapp'
+import { createEstimate, getEstimatePublicUrl } from '@/lib/zoho'
+import {
+  sendEstimateNotification,
+  sendAdminAlert,
+  sendAdminLocationNotification,
+} from '@/lib/whatsapp'
 import { getNearestLocation } from '@/lib/routing'
 import type { EnquiryRequest, CartItem } from '@/types/catalog'
 import type { GeocodedLocation } from '@/lib/routing'
@@ -56,13 +60,12 @@ export async function POST(request: NextRequest) {
   const cartHash = buildCartHash(body.items)
 
   const supabase = createServiceClient()
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
 
   // ── Update existing estimate (cart opened from WhatsApp deep link) ─────────
   if (body.estimate_id) {
     const { data: est } = await supabase
       .from('estimates')
-      .select('id, public_id, estimate_number, zoho_sync_status')
+      .select('id, public_id, estimate_number, zoho_sync_status, estimate_url, zoho_estimate_id')
       .eq('public_id', body.estimate_id)
       .eq('zoho_contact_id', session.zoho_contact_id)
       .maybeSingle()
@@ -82,17 +85,16 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', est.id)
 
-      const deepLinkPath = `cart?estimate_id=${est.public_id}`
       const waResult = await sendEstimateNotification(
         session.phone,
         {
           customerName: session.contact_name,
-          companyName: '',
           estimateNumber: est.estimate_number,
           items: body.items,
           totals: { subtotal, tax, total },
+          estimateUrl: est.estimate_url ?? null,
+          zohoEstimateId: est.zoho_estimate_id ?? '',
         },
-        deepLinkPath,
       )
       if (waResult.success) {
         await supabase
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest) {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
   const { data: existing } = await supabase
     .from('estimates')
-    .select('id, public_id, estimate_number, zoho_sync_status, app_whatsapp_sent, line_items')
+    .select('id, public_id, estimate_number, zoho_sync_status, app_whatsapp_sent, line_items, estimate_url, zoho_estimate_id')
     .eq('zoho_contact_id', session.zoho_contact_id)
     .eq('cart_hash', cartHash)
     .neq('zoho_sync_status', 'failed')
@@ -128,17 +130,16 @@ export async function POST(request: NextRequest) {
     // Re-send WhatsApp if not already sent for this estimate
     let whatsappSent = existing.app_whatsapp_sent
     if (!whatsappSent) {
-      const deepLinkPath = `cart?estimate_id=${existing.public_id}`
       const waResult = await sendEstimateNotification(
         session.phone,
         {
           customerName: session.contact_name,
-          companyName: session.contact_name,
           estimateNumber: existing.estimate_number,
           items: existing.line_items as CartItem[],
           totals: { subtotal, tax, total },
+          estimateUrl: existing.estimate_url ?? null,
+          zohoEstimateId: existing.zoho_estimate_id ?? '',
         },
-        deepLinkPath
       )
       if (waResult.success) {
         await supabase
@@ -156,6 +157,19 @@ export async function POST(request: NextRequest) {
       whatsapp_sent: whatsappSent,
       sync_pending: existing.zoho_sync_status === 'pending_zoho_sync',
     })
+  }
+
+  // ── Parse wl (user location) cookie ──────────────────────────────────────
+  // Used for admin notification's contactLocation field.
+  let contactLocation: string | null = null
+  try {
+    const wlRaw = request.cookies.get('wl')?.value
+    if (wlRaw) {
+      const wlData = JSON.parse(decodeURIComponent(wlRaw))
+      contactLocation = wlData?.area ?? wlData?.city ?? null
+    }
+  } catch {
+    // malformed cookie — proceed without location label
   }
 
   // ── Nearest-warehouse routing (server-side Haversine) ─────────────────────
@@ -212,6 +226,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create estimate. Please try again.' }, { status: 502 })
   }
 
+  // ── Fetch Zoho public URL (best-effort — null if GET fails) ─────────────
+  const estimateUrl = await getEstimatePublicUrl(zohoEstimateId)
+
   // ── Persist to Supabase with Zoho's canonical number and ID ──────────────
   const { data: estimate, error: insertError } = await supabase
     .from('estimates')
@@ -229,6 +246,8 @@ export async function POST(request: NextRequest) {
       tax_total: tax,
       total,
       notes: body.notes ?? null,
+      location_id: nearestLocationId ?? null,
+      estimate_url: estimateUrl ?? null,
     })
     .select('id, public_id')
     .single()
@@ -245,17 +264,16 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Send WhatsApp notification ─────────────────────────────────────────────
-  const deepLinkPath = `cart?estimate_id=${estimate.public_id}`
   const waResult = await sendEstimateNotification(
     session.phone,
     {
       customerName: session.contact_name,
-      companyName: '',
       estimateNumber: zohoEstimateNumber,
       items: body.items,
       totals: { subtotal, tax, total },
+      estimateUrl: estimateUrl ?? null,
+      zohoEstimateId: zohoEstimateId,
     },
-    deepLinkPath
   )
 
   if (waResult.success) {
@@ -272,16 +290,17 @@ export async function POST(request: NextRequest) {
     console.error('[enquiry] WhatsApp send failed:', waResult.error)
   }
 
-  // ── Admin alert — best-effort, never blocks response ─────────────────────
-  const warehouseLabel = nearestLocationName
-    ? `Warehouse: ${nearestLocationName} (${nearestLocationId})`
-    : 'Warehouse: unknown (no coords)'
-  void sendAdminAlert(
-    `📋 New estimate: ${zohoEstimateNumber}\n` +
-    `Contact: ${session.contact_name} (${session.phone})\n` +
-    `${warehouseLabel}\n` +
-    `Total: ₹${Math.round(total).toLocaleString('en-IN')}`
-  )
+  // ── Admin notification — best-effort, never blocks response ─────────────
+  void sendAdminLocationNotification({
+    locationName: nearestLocationName,
+    estimateNumber: zohoEstimateNumber,
+    contactName: session.contact_name,
+    contactPhone: session.phone,
+    contactLocation,
+    total,
+    itemCount: body.items.length,
+    zohoEstimateId,
+  })
 
   return NextResponse.json({
     success: true,
