@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
@@ -36,6 +37,7 @@ export default function CartPage() {
   const { items, subtotal, updateQty, removeItem, clearCart, loadItems } = useCart()
 
   const [loading, setLoading] = useState(false)
+  const quotingRef = useRef(false)  // ghost-click guard for handleGetQuote
   // PHASE2_SO_ARCHIVE: const [orderLoading, setOrderLoading] = useState(false)
   const [quoteResult, setQuoteResult] = useState<EnquiryResponse | null>(null)
   // PHASE2_SO_ARCHIVE: const [orderResult, setOrderResult] = useState<OrderResponse | null>(null)
@@ -116,7 +118,9 @@ export default function CartPage() {
   }
 
   async function handleGetQuote() {
+    if (quotingRef.current) return  // ghost-click guard
     requireAuth(async () => {
+      quotingRef.current = true
       setLoading(true)
       setError(null)
       try {
@@ -138,6 +142,7 @@ export default function CartPage() {
         setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       } finally {
         setLoading(false)
+        quotingRef.current = false
       }
     })
   }
@@ -199,12 +204,12 @@ export default function CartPage() {
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
           {quoteResult.whatsapp_sent ? 'Check your WhatsApp — your quote is on its way.' : 'Quote saved. WhatsApp delivery may be delayed.'}
         </p>
-        <button
-          onClick={() => router.push('/catalog')}
-          style={{ background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+        <Link
+          href="/catalog"
+          style={{ display: 'inline-block', background: '#059669', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700 }}
         >
           Back to Catalog
-        </button>
+        </Link>
       </div>
     )
   }
@@ -376,6 +381,7 @@ export default function CartPage() {
           <button
             onClick={handleGetQuote}
             disabled={isButtonDisabled}
+            className={loading ? 'btn-loading' : undefined}
             title={!authState?.authenticated ? 'Registration Required' : undefined}
             style={{
               width: '100%',

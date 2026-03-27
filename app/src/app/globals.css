@@ -39,3 +39,20 @@ body {
   animation: shimmer 1.4s infinite linear;
   border-radius: 4px;
 }
+
+/* ── Button haptics — visual press feedback ──────────────────────────── */
+/* Applied to all buttons; use data-no-haptic on icon-only controls to opt out */
+button:not([data-no-haptic]):not(:disabled) {
+  transition: transform 150ms ease-out, background-color 120ms ease, opacity 120ms ease;
+}
+
+button:not([data-no-haptic]):not(:disabled):active {
+  transform: scale(0.96);
+  transition: transform 80ms ease-out;
+}
+
+/* Ghost-click prevention: block re-taps while a fetch is in flight */
+.btn-loading {
+  pointer-events: none;
+  opacity: 0.85;
+}
