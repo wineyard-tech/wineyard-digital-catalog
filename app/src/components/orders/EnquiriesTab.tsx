@@ -4,21 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { FileText } from 'lucide-react'
 import { EnquiryCard } from './EnquiryCard'
+import { EnquiryRowSkeleton } from './EnquiryRowSkeleton'
 import type { EnquiryListItem } from '@/types/catalog'
-
-function Spinner() {
-  return (
-    <>
-      <span style={{
-        width: 24, height: 24,
-        border: '3px solid #059669', borderTopColor: 'transparent',
-        borderRadius: '50%', display: 'inline-block',
-        animation: 'spin 0.6s linear infinite',
-      }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </>
-  )
-}
 
 function EmptyState({ children }: { children: ReactNode }) {
   return (
@@ -90,11 +77,7 @@ export function EnquiriesTab() {
   }, [fetchPage])
 
   if (!initialDone && loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-        <Spinner />
-      </div>
-    )
+    return <EnquiryRowSkeleton count={4} />
   }
 
   if (error && items.length === 0) {
@@ -125,7 +108,13 @@ export function EnquiriesTab() {
 
       {loading && (
         <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
-          <Spinner />
+          <span style={{
+            width: 24, height: 24,
+            border: '3px solid #059669', borderTopColor: 'transparent',
+            borderRadius: '50%', display: 'inline-block',
+            animation: 'spin 0.6s linear infinite',
+          }} />
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
 

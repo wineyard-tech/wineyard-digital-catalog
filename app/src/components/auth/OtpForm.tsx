@@ -16,6 +16,9 @@ export default function OtpForm({ refId }: OtpFormProps) {
   const [errorMsg, setErrorMsg] = useState('')
   const [attemptsLeft, setAttemptsLeft] = useState<number | null>(null)
   const inputs = useRef<(HTMLInputElement | null)[]>([])
+  // Synchronous in-flight lock — prevents ghost-clicks and concurrent submits
+  // (React setState is async; a ref is the correct guard here)
+  const submittingRef = useRef(false)
 
   function focusNext(idx: number) {
     inputs.current[idx + 1]?.focus()
@@ -57,6 +60,8 @@ export default function OtpForm({ refId }: OtpFormProps) {
   }
 
   async function submitOtp(code: string) {
+    if (submittingRef.current) return  // ghost-click guard
+    submittingRef.current = true
     setState('loading')
     setErrorMsg('')
     try {
@@ -94,6 +99,8 @@ export default function OtpForm({ refId }: OtpFormProps) {
       setErrorMsg('Network error. Please check your connection and try again.')
       setDigits(Array(6).fill(''))
       inputs.current[0]?.focus()
+    } finally {
+      submittingRef.current = false
     }
   }
 
