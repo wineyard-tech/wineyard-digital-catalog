@@ -9,7 +9,7 @@
 //
 // POST body (all optional):
 //   {
-//     "entity": "locations" | "items" | "contacts" | "all",  // default: "all"
+//     "entity": "locations" | "items" | "pricebooks" | "contacts" | "all",  // default: "all"
 //     "page_from": 1,   // contacts only — resume from page N (default 1)
 //     "page_to": 999    // contacts only — stop after page N (default all)
 //   }
@@ -17,16 +17,17 @@
 // Recommended invocation order for first-time full sync:
 //   1. POST { "entity": "locations" }               — sync warehouses/branches first (FK dependency)
 //   2. POST { "entity": "items" }                   — syncs items + item_locations
-//   3. POST { "entity": "contacts", "page_from": 1,  "page_to": 15 }   — ~3000 contacts
-//   4. POST { "entity": "contacts", "page_from": 16, "page_to": 30 }   — next 3000
-//   5. POST { "entity": "contacts", "page_from": 31 }                  — remainder
+//   3. POST { "entity": "pricebooks" }              — syncs pricebook catalog + per-item prices (run after items)
+//   4. POST { "entity": "contacts", "page_from": 1,  "page_to": 15 }   — ~3000 contacts
+//   5. POST { "entity": "contacts", "page_from": 16, "page_to": 30 }   — next 3000
+//   6. POST { "entity": "contacts", "page_from": 31 }                  — remainder
 //
 // page_from/page_to exist because contacts WORKER_LIMIT is hit beyond ~3000 contacts per
 // invocation (each fallback row-by-row retry multiplies DB calls significantly).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getZohoToken, zohoGet, streamZohoPages } from '../_shared/zoho-client.ts'
+import { getZohoToken, zohoGet, streamZohoPages, fetchAllZohoPages } from '../_shared/zoho-client.ts'
 import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
@@ -686,6 +687,86 @@ async function syncAllContacts(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Pricebooks sync
+// Fetches all pricebooks from Zoho, upserts metadata into pricebook_catalog,
+// then fetches each pricebook's item prices and upserts into pricebook_items.
+// Typically <20 pricebooks so a sequential per-book detail fetch is fine.
+// Run AFTER syncAllItems — pricebook_items.zoho_item_id references items.
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: string) {
+  // GET /pricebooks — returns metadata list (no items array on list endpoint)
+  const zohoBooks = await fetchAllZohoPages<any>('/pricebooks', token, ORG_ID, 'pricebooks')
+
+  if (zohoBooks.length === 0) {
+    console.log('[pricebooks] no pricebooks returned from Zoho')
+    return { pricebooks_upserted: 0, pricebook_items_upserted: 0 }
+  }
+
+  console.log(`[pricebooks] found ${zohoBooks.length} pricebooks`)
+
+  // ── 1. Upsert pricebook metadata ────────────────────────────────────────────
+  const catalogRows = zohoBooks.map((pb: any) => ({
+    zoho_pricebook_id: pb.pricebook_id,
+    pricebook_name:    pb.pricebook_name,
+    currency_id:       pb.currency_id || 'INR',
+    is_active:         (pb.status ?? 'active') === 'active',
+    synced_at:         new Date().toISOString(),
+    updated_at:        new Date().toISOString(),
+  }))
+
+  const { error: catErr } = await supabase
+    .from('pricebook_catalog')
+    .upsert(catalogRows, { onConflict: 'zoho_pricebook_id', ignoreDuplicates: false })
+
+  if (catErr) throw new Error(`[pricebooks] catalog upsert failed: ${catErr.message}`)
+  console.log(`[pricebooks] upserted ${catalogRows.length} pricebook metadata rows`)
+
+  // ── 2. Fetch per-book item prices and upsert pricebook_items ────────────────
+  let itemsUpserted = 0
+
+  for (const pb of zohoBooks) {
+    const detail = await zohoGet(`/pricebooks/${pb.pricebook_id}`, token, ORG_ID)
+    if (detail.code !== 0) {
+      console.warn(`[pricebooks] detail fetch failed for ${pb.pricebook_id} (${pb.pricebook_name}): ${detail.message}`)
+      continue
+    }
+
+    // Zoho returns items under 'priceitems' on the detail endpoint
+    const priceItems: any[] = detail.pricebook?.priceitems ?? detail.pricebook?.items ?? []
+    if (priceItems.length === 0) {
+      console.log(`[pricebooks] ${pb.pricebook_name}: no items — skipping`)
+      continue
+    }
+
+    const itemRows = priceItems
+      .map((pi: any) => ({
+        zoho_pricebook_id: pb.pricebook_id,
+        zoho_item_id:      pi.item_id,
+        // Zoho returns custom price as 'pricebook_rate'; fall back to 'rate'
+        custom_rate:       dec(pi.pricebook_rate ?? pi.rate),
+        updated_at:        new Date().toISOString(),
+      }))
+      .filter((r: any) => r.zoho_item_id && r.custom_rate !== null)
+
+    if (itemRows.length === 0) continue
+
+    const { error: itemErr } = await supabase
+      .from('pricebook_items')
+      .upsert(itemRows, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
+
+    if (itemErr) {
+      console.warn(`[pricebooks] items upsert failed for ${pb.pricebook_name}: ${itemErr.message}`)
+    } else {
+      itemsUpserted += itemRows.length
+      console.log(`[pricebooks] ${pb.pricebook_name}: ${itemRows.length} item prices upserted`)
+    }
+  }
+
+  console.log(`[pricebooks] done — ${catalogRows.length} pricebooks, ${itemsUpserted} item prices`)
+  return { pricebooks_upserted: catalogRows.length, pricebook_items_upserted: itemsUpserted }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Handler
 // ─────────────────────────────────────────────────────────────────────────────
 serve(async (req) => {
@@ -693,7 +774,7 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 })
   }
 
-  let entity: 'locations' | 'items' | 'item_locations' | 'contacts' | 'geocode_locations' | 'all' = 'all'
+  let entity: 'locations' | 'items' | 'item_locations' | 'pricebooks' | 'contacts' | 'geocode_locations' | 'all' = 'all'
   let pageFrom   = 1
   let pageTo     = 999
   let itemOffset = 0
@@ -702,7 +783,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    if (body?.entity && ['locations', 'items', 'item_locations', 'contacts', 'geocode_locations', 'all'].includes(body.entity)) {
+    if (body?.entity && ['locations', 'items', 'item_locations', 'pricebooks', 'contacts', 'geocode_locations', 'all'].includes(body.entity)) {
       entity = body.entity
     }
     if (typeof body?.page_from   === 'number') pageFrom   = body.page_from
@@ -725,6 +806,7 @@ serve(async (req) => {
     let locationsResult        = null
     let itemsResult            = null
     let itemLocationsResult    = null
+    let pricebooksResult       = null
     let contactsResult         = null
     let geocodeResult          = null
 
@@ -744,6 +826,12 @@ serve(async (req) => {
       console.log('Starting full items sync…')
       itemsResult = await syncAllItems(supabase, token)
       console.log('Items sync complete:', itemsResult)
+    }
+
+    if (entity === 'pricebooks' || entity === 'all') {
+      console.log('Starting pricebooks sync…')
+      pricebooksResult = await syncPricebooks(supabase, token)
+      console.log('Pricebooks sync complete:', pricebooksResult)
     }
 
     if (entity === 'item_locations') {
@@ -766,6 +854,7 @@ serve(async (req) => {
       ...(locationsResult     ? { locations:      locationsResult }     : {}),
       ...(itemsResult         ? { items:          itemsResult }         : {}),
       ...(itemLocationsResult ? { item_locations: itemLocationsResult } : {}),
+      ...(pricebooksResult    ? { pricebooks:     pricebooksResult }    : {}),
       ...(contactsResult      ? { contacts:       contactsResult }      : {}),
     }
 
