@@ -2,6 +2,10 @@
 
 import { useState } from 'react'
 import { Minus, Plus, Trash2, MessageCircle, X } from 'lucide-react'
+
+const CART_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56"><rect width="56" height="56" fill="#F3F4F6"/><text x="28" y="34" text-anchor="middle" fill="#D1D5DB" font-size="22">📷</text></svg>`
+)}`
 import { useCart } from './CartContext'
 import type { EnquiryResponse } from '@/types/catalog'
 
@@ -179,6 +183,20 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                     borderBottom: '1px solid #F9FAFB',
                   }}
                 >
+                  {/* Product thumbnail */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.image_url || CART_PLACEHOLDER}
+                    alt={item.item_name}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).src = CART_PLACEHOLDER }}
+                    style={{
+                      width: 56, height: 56, flexShrink: 0,
+                      objectFit: 'contain', borderRadius: 8,
+                      background: '#F9FAFB', padding: 4,
+                      border: '1px solid #F3F4F6',
+                    }}
+                  />
+
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p
                       style={{

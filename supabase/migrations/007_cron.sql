@@ -34,5 +34,15 @@ SELECT cron.schedule('session-cleanup', '30 21 * * *', $$
 $$);
 */
 
+-- sync-pricebooks: weekly on Sundays at 03:30 AM IST (22:00 UTC Saturday)
+-- Runs less frequently than item/contact syncs — pricebook assignments change rarely.
+-- Staggered 30 min before sync-items to avoid concurrent Zoho API load.
+SELECT cron.schedule('sync-pricebooks', '0 22 * * 6', $$
+  SELECT net.http_post(
+    url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/sync-pricebooks',
+    headers := '{"Authorization":"Bearer <SERVICE_ROLE_KEY>","Content-Type":"application/json"}'::jsonb,
+    body    := '{}'::jsonb)
+$$);
+
 -- After running, verify: SELECT * FROM cron.job;
 -- To update an existing schedule: SELECT cron.unschedule('sync-items'); then re-run the schedule call.

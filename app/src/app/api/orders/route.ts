@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
-import { createHash } from 'crypto'
+// PHASE2_SO_ARCHIVE: import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { createSalesOrder, markEstimateAccepted } from '@/lib/zoho'
-import { sendOrderConfirmation, sendAdminAlert } from '@/lib/whatsapp'
-import type { OrderRequest, CartItem } from '@/types/catalog'
+// PHASE2_SO_ARCHIVE: import { createSalesOrder, markEstimateAccepted } from '@/lib/zoho'
+// PHASE2_SO_ARCHIVE: import { sendOrderConfirmation, sendAdminAlert } from '@/lib/whatsapp'
+// PHASE2_SO_ARCHIVE: import type { OrderRequest } from '@/types/catalog'
+import type { CartItem } from '@/types/catalog'
 
+/* PHASE2_SO_ARCHIVE_START
 function buildCartHash(items: CartItem[]): string {
   const sorted = [...items].sort((a, b) => a.zoho_item_id.localeCompare(b.zoho_item_id))
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex')
@@ -20,9 +22,15 @@ async function withOneRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T>
     return fn()
   }
 }
+PHASE2_SO_ARCHIVE_END */
 
-// ── POST /api/orders — Place a new sales order ────────────────────────────────
+// ── POST /api/orders — Sales order creation disabled (Phase 1) ────────────────
 
+export async function POST(_request: NextRequest) {
+  return NextResponse.json({ error: 'Sales order creation is not available' }, { status: 405 })
+}
+
+/* PHASE2_SO_ARCHIVE_START
 export async function POST(request: NextRequest) {
   let session
   try {
@@ -193,6 +201,7 @@ export async function POST(request: NextRequest) {
     whatsapp_sent: waResult.success,
   })
 }
+PHASE2_SO_ARCHIVE_END */
 
 // ── GET /api/orders — Unified paginated transaction list ─────────────────────
 

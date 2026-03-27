@@ -26,6 +26,7 @@ export function TransactionCard({ item }: { item: TransactionListItem }) {
   function handleClick() {
     /* PHASE2_SO_ARCHIVE_START
     const type = item.kind === 'invoice' ? 'invoice' : 'order'
+    router.push(`/catalog/orders/${type}/${item.id}`)
     PHASE2_SO_ARCHIVE_END */
     router.push(`/catalog/orders/invoice/${item.id}`)
   }

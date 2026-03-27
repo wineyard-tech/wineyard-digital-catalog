@@ -36,7 +36,7 @@ function ConfirmDialog({ onConfirm, onCancel }: ConfirmDialogProps) {
           Replace your cart?
         </h3>
         <p style={{ margin: '0 0 20px', fontSize: 14, color: '#6B7280' }}>
-          Your current cart will be replaced with available items from this enquiry.
+          Your current cart will be replaced with available items from this enquiry. You can then submit a new quote from the cart.
         </p>
         <div style={{ display: 'flex', gap: 10 }}>
           <button
@@ -86,14 +86,15 @@ export default function EnquiryDetailPage({
       .finally(() => setLoading(false))
   }, [id])
 
-  const isConverted = data?.status === 'Converted'
+  // PHASE2_SO_ARCHIVE: const isConverted = data?.status === 'Converted'
 
   const availableItems = data?.line_items.filter((li) => li.stock_status !== 'out_of_stock') ?? []
   const unavailableCount = (data?.line_items.length ?? 0) - availableItems.length
   const allUnavailable = availableItems.length === 0 && (data?.line_items.length ?? 0) > 0
 
-  const ctaLabel = isConverted ? 'Reorder' : 'Place Order'
+  // PHASE2_SO_ARCHIVE: const ctaLabel = isConverted ? 'Reorder' : 'Place Order'
 
+  /* PHASE2_SO_ARCHIVE_START
   function handleCTA() {
     if (!data) return
 
@@ -108,6 +109,17 @@ export default function EnquiryDetailPage({
     } else {
       // Pending / Expired: navigate to cart with estimate deep link
       router.push(`/cart?estimate_id=${data.estimate_id}`)
+    }
+  }
+  PHASE2_SO_ARCHIVE_END */
+
+  function handleCTA() {
+    if (!data) return
+    if (availableItems.length === 0) return
+    if (cartItems.length > 0) {
+      setShowConfirm(true)
+    } else {
+      doReorder()
     }
   }
 
@@ -193,7 +205,7 @@ export default function EnquiryDetailPage({
       )}
 
       {/* All unavailable warning */}
-      {allUnavailable && isConverted && (
+      {allUnavailable && (
         <div style={{
           margin: '12px 16px 0', padding: '10px 12px',
           background: '#FEE2E2', borderRadius: 8,
@@ -238,17 +250,17 @@ export default function EnquiryDetailPage({
       }}>
         <button
           onClick={handleCTA}
-          disabled={isConverted && allUnavailable}
+          disabled={allUnavailable}
           style={{
             width: '100%', padding: '14px',
-            background: isConverted && allUnavailable ? '#D1D5DB' : '#059669',
+            background: allUnavailable ? '#D1D5DB' : '#059669',
             border: 'none', borderRadius: 8,
             fontSize: 15, fontWeight: 700,
-            color: isConverted && allUnavailable ? '#6B7280' : '#FFFFFF',
-            cursor: isConverted && allUnavailable ? 'not-allowed' : 'pointer',
+            color: allUnavailable ? '#6B7280' : '#FFFFFF',
+            cursor: allUnavailable ? 'not-allowed' : 'pointer',
           }}
         >
-          {ctaLabel}
+          {'Reorder'}
         </button>
       </div>
 

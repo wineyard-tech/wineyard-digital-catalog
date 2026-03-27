@@ -12,6 +12,7 @@ export interface CatalogItem {
   available_stock: number;
   stock_status: 'available' | 'limited' | 'out_of_stock';
   image_url: string | null;
+  category_icon_url?: string | null;
   tax_percentage: 18;           // Hardcoded Phase 1
 }
 
