@@ -45,12 +45,10 @@ function getCategoryIcon(name: string): LucideIcon {
   return Package
 }
 
-// Optimal grid: pick cols so rows fit without scroll
+// 3-column max — gives tiles enough room for icon + label
 function computeGridLayout(count: number): { cols: number; rows: number } {
-  if (count <= 4)  return { cols: 2, rows: Math.ceil(count / 2) }
-  if (count <= 9)  return { cols: 3, rows: Math.ceil(count / 3) }
-  if (count <= 24) return { cols: 4, rows: Math.ceil(count / 4) }
-  return { cols: 5, rows: Math.ceil(count / 5) }
+  if (count <= 4) return { cols: 2, rows: Math.ceil(count / 2) }
+  return { cols: 3, rows: Math.ceil(count / 3) }
 }
 
 const HEADER_H = 96 // location row (44) + search bar (52)
@@ -175,8 +173,8 @@ export default function CategoriesPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
-              gridTemplateRows: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateRows: 'repeat(4, 1fr)',
               gap: 10,
               height: '100%',
             }}
@@ -243,7 +241,7 @@ export default function CategoriesPage() {
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                       />
                     ) : (
-                      <Icon size={28} color="#64748B" strokeWidth={1.5} />
+                      <Icon size={36} color="#64748B" strokeWidth={1.5} />
                     )}
                   </div>
 
@@ -258,7 +256,7 @@ export default function CategoriesPage() {
                   >
                     <span
                       style={{
-                        fontSize: 10,
+                        fontSize: 12,
                         fontWeight: 600,
                         color: '#1A1A2E',
                         lineHeight: 1.3,

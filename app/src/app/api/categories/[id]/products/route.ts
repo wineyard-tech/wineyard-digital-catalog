@@ -14,7 +14,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: cat } = await (supabase as any)
     .from('categories')
-    .select('category_name')
+    .select('category_name, icon_url')
     .eq('zoho_category_id', id)
     .single()
 
@@ -81,6 +81,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
   }
 
+  // Build a single-entry icon map for this category
+  const categoryIconMap: Record<string, string> = cat.icon_url
+    ? { [cat.category_name]: cat.icon_url }
+    : {}
+
   // ── Shape CatalogItem[] with popularity attached ──────────────────────────
   const items = (rows as Record<string, unknown>[]).map((row) => {
     const baseRate = Number(row.base_rate ?? 0)
@@ -91,18 +96,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (Array.isArray(row.image_urls) && row.image_urls.length > 0) {
       imageUrl = row.image_urls[0] as string
     }
+    const categoryName = (row.category_name as string | null) ?? null
 
     const item: CatalogItem & { order_count_30d: number } = {
       zoho_item_id: row.zoho_item_id as string,
       item_name: row.item_name as string,
       sku: row.sku as string,
       brand: (row.brand as string | null) ?? null,
-      category_name: (row.category_name as string | null) ?? null,
+      category_name: categoryName,
       base_rate: baseRate,
       final_price: finalPrice,
       available_stock: stock,
       stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
       image_url: imageUrl,
+      category_icon_url: (categoryName && categoryIconMap[categoryName]) ? categoryIconMap[categoryName] : null,
       tax_percentage: 18,
       price_type: customRate != null ? 'custom' : 'base',
       order_count_30d: popMap.get(row.zoho_item_id as string) ?? 0,

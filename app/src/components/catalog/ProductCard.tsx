@@ -14,7 +14,7 @@ interface ProductCardProps {
 }
 
 const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="140" viewBox="0 0 200 140"><rect width="200" height="140" fill="#F3F4F6"/><text x="100" y="65" text-anchor="middle" fill="#9CA3AF" font-size="36">📷</text><text x="100" y="88" text-anchor="middle" fill="#D1D5DB" font-size="11">No image</text></svg>`
+  `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="#F3F4F6"/><text x="100" y="90" text-anchor="middle" fill="#9CA3AF" font-size="36">📷</text><text x="100" y="116" text-anchor="middle" fill="#D1D5DB" font-size="11">No image</text></svg>`
 )}`
 
 function fmt(n: number) {
@@ -29,7 +29,9 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
   const cartEntry = items.find((i) => i.zoho_item_id === item.zoho_item_id)
   const qty = cartEntry?.quantity ?? 0
   const isOOS = item.stock_status === 'out_of_stock'
-  const imgSrc = !imgError && item.image_url ? item.image_url : PLACEHOLDER
+  const imgSrc = !imgError && item.image_url
+    ? item.image_url
+    : item.category_icon_url ?? PLACEHOLDER
   const hasDiscount = item.price_type === 'custom' && item.base_rate > item.final_price
 
   function handleAdd(e: React.MouseEvent) {
@@ -43,7 +45,7 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
-      image_url: item.image_url,
+      image_url: item.image_url ?? item.category_icon_url,
     })
   }
 
@@ -81,15 +83,15 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
         cursor: 'pointer',
       }}
     >
-      {/* Thumbnail — full fill, no padding */}
-      <div style={{ position: 'relative', height: 130, background: '#F9FAFB' }}>
+      {/* Thumbnail — square container, contain so full product is always visible */}
+      <div style={{ position: 'relative', aspectRatio: '1 / 1', background: '#F9FAFB' }}>
         <Image
           src={imgSrc}
           alt={item.item_name}
           fill
-          style={{ objectFit: 'cover' }}
+          style={{ objectFit: 'contain', padding: 8 }}
           onError={() => setImgError(true)}
-          sizes="(max-width: 640px) 50vw, 33vw"
+          sizes="(max-width: 640px) 160px, 220px"
           unoptimized={!item.image_url || imgError}
         />
 
@@ -125,12 +127,13 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
                 style={{
                   position: 'absolute', bottom: 8, right: 8,
                   width: 32, height: 32,
-                  border: '2px solid #B45309', borderRadius: 6,
-                  background: 'transparent', cursor: 'pointer',
+                  border: 'none', borderRadius: 6,
+                  background: '#B45309', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 2px 6px rgba(180,83,9,0.4)',
                 }}
               >
-                <Bell size={15} color="#B45309" />
+                <Bell size={15} color="#FFFFFF" />
               </button>
             ) : qty === 0 ? (
               <button
@@ -139,12 +142,13 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
                 style={{
                   position: 'absolute', bottom: 8, right: 8,
                   width: 32, height: 32,
-                  border: '2px solid #059669', borderRadius: 6,
-                  background: 'transparent', cursor: 'pointer',
+                  border: 'none', borderRadius: 6,
+                  background: '#059669', cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 2px 6px rgba(5,150,105,0.4)',
                 }}
               >
-                <Plus size={16} color="#059669" />
+                <Plus size={16} color="#FFFFFF" strokeWidth={2.5} />
               </button>
             ) : (
               <div
