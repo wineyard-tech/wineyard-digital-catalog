@@ -219,12 +219,13 @@ export default function LocationPage() {
 
       {/* Search bar — always visible */}
       <div style={{ padding: '0 16px 12px', position: 'relative' }}>
-        <Search
-          size={16}
-          color="#94A3B8"
-          style={{ position: 'absolute', left: 28, top: 24, transform: 'translateY(-50%)' }}
+        {/* Search icon: outer span positions, inner element renders — no transform conflict */}
+        <span
+          style={{ position: 'absolute', left: 28, top: 24, transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}
           aria-hidden="true"
-        />
+        >
+          <Search size={16} color="#94A3B8" />
+        </span>
         <input
           ref={searchInputRef}
           type="text"
@@ -247,27 +248,28 @@ export default function LocationPage() {
           }}
         />
         {searchLoading && (
-          <span
-            style={{
-              position: 'absolute',
-              right: 28,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              width: 16,
-              height: 16,
-              border: '2px solid #E2E8F0',
-              borderTop: '2px solid #0066CC',
-              borderRadius: '50%',
-              display: 'inline-block',
-              animation: 'spin 0.8s linear infinite',
-            }}
-          />
+          /* Outer span handles vertical centering; inner span handles rotation only.
+             Separating them prevents the @keyframes transform from overriding translateY. */
+          <span style={{ position: 'absolute', right: 28, top: 24, transform: 'translateY(-50%)', display: 'flex' }}>
+            <span
+              style={{
+                width: 16,
+                height: 16,
+                border: '2px solid #E2E8F0',
+                borderTop: '2px solid #0066CC',
+                borderRadius: '50%',
+                display: 'block',
+                animation: 'spin 0.8s linear infinite',
+              }}
+            />
+          </span>
         )}
         {!searchLoading && searchQuery && (
           <button
             aria-label="Clear search"
+            data-no-haptic
             onClick={() => { setSearchQuery(''); setSuggestions([]); searchInputRef.current?.focus() }}
-            style={{ position: 'absolute', right: 28, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+            style={{ position: 'absolute', right: 28, top: 24, transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
           >
             <X size={15} color="#94A3B8" />
           </button>
