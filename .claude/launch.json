@@ -2,10 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "Next.js Dev Server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "app", "run", "dev"],
-      "port": 3000
+      "name": "WineYard Dev",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd app && npm run dev -- --port $PORT"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
