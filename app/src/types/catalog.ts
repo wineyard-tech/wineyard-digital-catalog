@@ -43,6 +43,8 @@ export interface EnquiryRequest {
   items: CartItem[];
   notes?: string;
   estimate_id?: string; // when set, update this estimate instead of creating a new one
+  user_lat?: number | null;
+  user_lng?: number | null;
 }
 
 export interface OrderRequest {
