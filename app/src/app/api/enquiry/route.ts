@@ -5,7 +5,9 @@ import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { createEstimate } from '@/lib/zoho'
 import { sendEstimateNotification, sendAdminAlert } from '@/lib/whatsapp'
+import { getNearestLocation } from '@/lib/routing'
 import type { EnquiryRequest, CartItem } from '@/types/catalog'
+import type { GeocodedLocation } from '@/lib/routing'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -156,13 +158,46 @@ export async function POST(request: NextRequest) {
     })
   }
 
+  // ── Nearest-warehouse routing (server-side Haversine) ─────────────────────
+  // Coords are supplied by the client from the `wl` cookie — never exposed to
+  // other clients. Warehouses without geocoords are excluded automatically.
+  let nearestLocationId: string | null = null
+  let nearestLocationName: string | null = null
+  if (body.user_lat != null && body.user_lng != null &&
+      isFinite(body.user_lat) && isFinite(body.user_lng)) {
+    const { data: locs } = await supabase
+      .from('locations')
+      .select('zoho_location_id, location_name, latitude, longitude')
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null)
+      .eq('status', 'active')
+
+    if (locs && locs.length > 0) {
+      const geocoded: GeocodedLocation[] = (locs as Array<{
+        zoho_location_id: string
+        location_name: string
+        latitude: number
+        longitude: number
+      }>).map(l => ({
+        zoho_location_id: l.zoho_location_id,
+        latitude: l.latitude,
+        longitude: l.longitude,
+      }))
+      nearestLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
+      nearestLocationName = locs.find(l => l.zoho_location_id === nearestLocationId)?.location_name ?? null
+    }
+  }
+
   // ── Create estimate in Zoho Books first (Zoho owns the number) ───────────
   let zohoEstimateId: string
   let zohoEstimateNumber: string
 
   try {
     const zohoRes = await withOneRetry(() =>
-      createEstimate(session.zoho_contact_id, body.items, body.notes)
+      createEstimate(session.zoho_contact_id, body.items, {
+        notes: body.notes,
+        locationId: nearestLocationId,
+      })
     )
     zohoEstimateId = zohoRes.estimate.estimate_id
     zohoEstimateNumber = zohoRes.estimate.estimate_number
@@ -236,6 +271,17 @@ export async function POST(request: NextRequest) {
   } else {
     console.error('[enquiry] WhatsApp send failed:', waResult.error)
   }
+
+  // ── Admin alert — best-effort, never blocks response ─────────────────────
+  const warehouseLabel = nearestLocationName
+    ? `Warehouse: ${nearestLocationName} (${nearestLocationId})`
+    : 'Warehouse: unknown (no coords)'
+  void sendAdminAlert(
+    `📋 New estimate: ${zohoEstimateNumber}\n` +
+    `Contact: ${session.contact_name} (${session.phone})\n` +
+    `${warehouseLabel}\n` +
+    `Total: ₹${Math.round(total).toLocaleString('en-IN')}`
+  )
 
   return NextResponse.json({
     success: true,

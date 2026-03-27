@@ -51,7 +51,7 @@ function dec(val: unknown): number | null {
 // endpoint (docs: https://www.zoho.com/books/api/v3/locations/).
 // Must run before items sync — item_locations has a FK to locations.
 // ─────────────────────────────────────────────────────────────────────────────
-async function syncLocations(supabase: ReturnType<typeof createClient>, token: string) {
+async function syncLocations(supabase: ReturnType<typeof createClient>, token: string, geocode = true) {
   // GET /locations — returns both warehouses and branches in one call.
   // Docs: https://www.zoho.com/books/api/v3/locations/#list-all-locations
   // Uses the same zohoapis.in domain as all other endpoints; path is /locations (not /warehouses)
@@ -83,7 +83,98 @@ async function syncLocations(supabase: ReturnType<typeof createClient>, token: s
   if (error) throw new Error(`[locations] upsert failed: ${error.message}`)
 
   console.log(`[locations] upserted ${rows.length} warehouses`)
-  return { locations_upserted: rows.length }
+
+  // Geocode any newly-added or previously unresolved locations
+  const geocodeResult = geocode ? await geocodeLocations(supabase) : { geocoded: 0, failed: 0 }
+
+  return { locations_upserted: rows.length, ...geocodeResult }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Geocode locations
+// Calls Google Maps Geocoding API for any locations that have a populated address
+// but no lat/lng yet. Called from syncLocations after the upsert so new warehouses
+// are geocoded on first sync.
+// ─────────────────────────────────────────────────────────────────────────────
+async function geocodeLocations(supabase: ReturnType<typeof createClient>) {
+  const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')
+  if (!apiKey) {
+    console.warn('[geocode] GOOGLE_MAPS_API_KEY not set — skipping geocoding')
+    return { geocoded: 0, failed: 0 }
+  }
+
+  const { data: rows, error } = await supabase
+    .from('locations')
+    .select('zoho_location_id, location_name, address')
+    .is('latitude', null)
+    .not('address', 'is', null)
+
+  if (error) {
+    console.error('[geocode] failed to fetch un-geocoded locations:', error.message)
+    return { geocoded: 0, failed: 0 }
+  }
+
+  if (!rows || rows.length === 0) {
+    console.log('[geocode] all locations already geocoded')
+    return { geocoded: 0, failed: 0 }
+  }
+
+  console.log(`[geocode] geocoding ${rows.length} location(s)`)
+  let geocoded = 0
+  let failed = 0
+
+  for (const row of rows) {
+    // Build address string — address may be a JSON object from Zoho
+    const addressStr = typeof row.address === 'string'
+      ? row.address
+      : [
+          row.address?.address,
+          row.address?.city,
+          row.address?.state,
+          row.address?.zip,
+          'India',
+        ].filter(Boolean).join(', ')
+
+    if (!addressStr.trim()) {
+      console.warn(`[geocode] location ${row.zoho_location_id} has empty address — skipping`)
+      failed++
+      continue
+    }
+
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(addressStr)}&key=${apiKey}`
+
+    try {
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+
+      if (data.status !== 'OK' || !data.results?.[0]?.geometry?.location) {
+        console.warn(`[geocode] location ${row.zoho_location_id} (${row.location_name}): status=${data.status}`)
+        failed++
+        continue
+      }
+
+      const { lat, lng } = data.results[0].geometry.location
+      const { error: updErr } = await supabase
+        .from('locations')
+        .update({ latitude: lat, longitude: lng, updated_at: new Date().toISOString() })
+        .eq('zoho_location_id', row.zoho_location_id)
+
+      if (updErr) {
+        console.error(`[geocode] update failed for ${row.zoho_location_id}: ${updErr.message}`)
+        failed++
+      } else {
+        console.log(`[geocode] ${row.location_name}: (${lat}, ${lng})`)
+        geocoded++
+      }
+    } catch (err) {
+      console.error(`[geocode] ${row.zoho_location_id}: ${String(err)}`)
+      failed++
+    }
+  }
+
+  console.log(`[geocode] done — geocoded=${geocoded}, failed=${failed}`)
+  return { geocoded, failed }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -590,7 +681,7 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 })
   }
 
-  let entity: 'locations' | 'items' | 'item_locations' | 'contacts' | 'all' = 'all'
+  let entity: 'locations' | 'items' | 'item_locations' | 'contacts' | 'geocode_locations' | 'all' = 'all'
   let pageFrom   = 1
   let pageTo     = 999
   let itemOffset = 0
@@ -599,7 +690,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json()
-    if (body?.entity && ['locations', 'items', 'item_locations', 'contacts', 'all'].includes(body.entity)) {
+    if (body?.entity && ['locations', 'items', 'item_locations', 'contacts', 'geocode_locations', 'all'].includes(body.entity)) {
       entity = body.entity
     }
     if (typeof body?.page_from   === 'number') pageFrom   = body.page_from
@@ -623,6 +714,13 @@ serve(async (req) => {
     let itemsResult            = null
     let itemLocationsResult    = null
     let contactsResult         = null
+    let geocodeResult          = null
+
+    if (entity === 'geocode_locations') {
+      console.log('Starting standalone geocode pass…')
+      geocodeResult = await geocodeLocations(supabase)
+      console.log('Geocode complete:', geocodeResult)
+    }
 
     if (entity === 'locations' || entity === 'all') {
       console.log('Starting locations sync…')
@@ -652,6 +750,7 @@ serve(async (req) => {
       entity,
       started_at:   startedAt,
       completed_at: new Date().toISOString(),
+      ...(geocodeResult       ? { geocode:        geocodeResult }        : {}),
       ...(locationsResult     ? { locations:      locationsResult }     : {}),
       ...(itemsResult         ? { items:          itemsResult }         : {}),
       ...(itemLocationsResult ? { item_locations: itemLocationsResult } : {}),

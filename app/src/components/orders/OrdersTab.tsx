@@ -53,8 +53,10 @@ export function OrdersTab() {
       if (res.status === 403) throw new Error('Please log in to view your orders.')
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      const incoming = (data.items as TransactionListItem[]).filter((i) => i.kind === 'invoice')
-      setItems((prev) => pageOffset === 0 ? incoming : [...prev, ...incoming])
+      setItems((prev) => {
+        const incoming: TransactionListItem[] = pageOffset === 0 ? data.items : [...prev, ...data.items]
+        return incoming.filter((i) => i.kind === 'invoice')
+      })
       hasMoreRef.current = data.has_more
       setHasMore(data.has_more)
       offsetRef.current = data.next_offset
