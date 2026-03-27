@@ -29,23 +29,34 @@ CREATE TABLE IF NOT EXISTS pricebook_items (
   UNIQUE(zoho_pricebook_id, zoho_item_id)
 );
 
--- 3. Migrate existing data from the old flat `pricebooks` table (if it has rows)
-INSERT INTO pricebook_catalog (zoho_pricebook_id, pricebook_name, created_at, updated_at)
-SELECT DISTINCT
-  zoho_pricebook_id,
-  pricebook_name,
-  MIN(created_at),
-  MAX(updated_at)
-FROM pricebooks
-GROUP BY zoho_pricebook_id, pricebook_name
-ON CONFLICT (zoho_pricebook_id) DO NOTHING;
+-- 3. Migrate existing data from the old flat `pricebooks` table (if it exists)
+--    Wrapped in a DO block so this migration is safe to run on a clean DB
+--    where the old `pricebooks` table was never created.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'pricebooks'
+  ) THEN
+    INSERT INTO pricebook_catalog (zoho_pricebook_id, pricebook_name, created_at, updated_at)
+    SELECT DISTINCT
+      zoho_pricebook_id,
+      pricebook_name,
+      MIN(created_at),
+      MAX(updated_at)
+    FROM pricebooks
+    GROUP BY zoho_pricebook_id, pricebook_name
+    ON CONFLICT (zoho_pricebook_id) DO NOTHING;
 
-INSERT INTO pricebook_items (zoho_pricebook_id, zoho_item_id, custom_rate, updated_at)
-SELECT zoho_pricebook_id, zoho_item_id, custom_rate, updated_at
-FROM pricebooks
-ON CONFLICT (zoho_pricebook_id, zoho_item_id) DO NOTHING;
+    INSERT INTO pricebook_items (zoho_pricebook_id, zoho_item_id, custom_rate, updated_at)
+    SELECT zoho_pricebook_id, zoho_item_id, custom_rate, updated_at
+    FROM pricebooks
+    ON CONFLICT (zoho_pricebook_id, zoho_item_id) DO NOTHING;
+  END IF;
+END
+$$;
 
--- 4. Drop old table (after data migration)
+-- 4. Drop old table (after data migration, no-op if it never existed)
 DROP TABLE IF EXISTS pricebooks;
 
 -- 5. Indexes for fast pricebook price lookups
