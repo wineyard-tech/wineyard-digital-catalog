@@ -44,14 +44,22 @@ export default function CartPage() {
   const [showRegModal, setShowRegModal] = useState(false)
   const [estimateBanner, setEstimateBanner] = useState<EstimateBanner | null>(null)
   const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
+  const [warehouseName, setWarehouseName] = useState<string | null>(null)
 
   // Read wl cookie for delivery location display and routing coords
   useEffect(() => {
     try {
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
-      if (match) {
-        const data = JSON.parse(decodeURIComponent(match.slice(3)))
-        setDeliveryArea(data.area || data.city || null)
+      if (!match) return
+      const data = JSON.parse(decodeURIComponent(match.slice(3)))
+      setDeliveryArea(data.name || data.area || data.city || null)
+      const lat = typeof data.lat === 'number' && isFinite(data.lat) ? data.lat : null
+      const lng = typeof data.lng === 'number' && isFinite(data.lng) ? data.lng : null
+      if (lat !== null && lng !== null) {
+        fetch(`/api/nearest-location?lat=${lat}&lng=${lng}`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.name) setWarehouseName(d.name) })
+          .catch(() => {})
       }
     } catch { /* malformed cookie — ignore */ }
   }, [])
@@ -246,7 +254,8 @@ export default function CartPage() {
   PHASE2_SO_ARCHIVE_END */
 
   const anyLoading = loading
-  const isButtonDisabled = anyLoading || items.length === 0
+  const hasLocation = deliveryArea !== null
+  const isButtonDisabled = anyLoading || items.length === 0 || !hasLocation
 
   // ── Main cart ─────────────────────────────────────────────────────────────
   return (
@@ -346,13 +355,20 @@ export default function CartPage() {
         </div>
 
         {/* Delivery location */}
-        <div style={{ margin: '0 16px 16px', background: '#FFFFFF', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-          <MapPin size={16} color="#0066CC" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
-          <div>
-            <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: '#1A1A2E' }}>
-              Delivering to {deliveryArea ?? 'your location'}
+        <div
+          onClick={() => !hasLocation && router.push('/location?from=catalog')}
+          style={{ margin: '0 16px 16px', background: hasLocation ? '#FFFFFF' : '#FFF7ED', border: hasLocation ? 'none' : '1.5px solid #FED7AA', borderRadius: 10, padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 8, cursor: hasLocation ? 'default' : 'pointer' }}
+        >
+          <MapPin size={16} color={hasLocation ? '#0066CC' : '#F97316'} style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: hasLocation ? '#1A1A2E' : '#EA580C' }}>
+              {hasLocation ? `Delivering to ${deliveryArea}` : 'Set delivery location'}
             </p>
-            <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>From nearest WineYard warehouse</p>
+            <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
+              {hasLocation
+                ? (warehouseName ? `From ${warehouseName}` : 'From nearest WineYard warehouse')
+                : 'Required before getting a quote — tap to set'}
+            </p>
           </div>
         </div>
       </div>

@@ -79,6 +79,7 @@ export default function LocationPage() {
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const mapsInitRef = useRef(false)
+  const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null)
 
   useEffect(() => {
     mountedRef.current = true
@@ -94,7 +95,7 @@ export default function LocationPage() {
 
   function initMaps() {
     if (mapsInitRef.current) return
-    setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '' })
+    setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '', v: 'beta' })
     mapsInitRef.current = true
   }
 
@@ -156,10 +157,12 @@ export default function LocationPage() {
     setSuggestions([])
     try {
       initMaps()
-      const { AutocompleteSuggestion } = await importLibrary('places') as google.maps.PlacesLibrary
+      const { AutocompleteSuggestion, AutocompleteSessionToken } = await importLibrary('places') as google.maps.PlacesLibrary
+      if (!sessionTokenRef.current) sessionTokenRef.current = new AutocompleteSessionToken()
       const { suggestions: results } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: q,
         includedRegionCodes: ['in'],
+        sessionToken: sessionTokenRef.current,
       })
       if (!mountedRef.current) return
       setSuggestions(results)
@@ -179,12 +182,13 @@ export default function LocationPage() {
       const { Place } = await importLibrary('places') as google.maps.PlacesLibrary
       const place = prediction.toPlace()
       await place.fetchFields({ fields: ['location', 'addressComponents', 'formattedAddress'] })
+      sessionTokenRef.current = null  // session complete; next search gets a fresh token
       if (!place.location) throw new Error('No location')
       const lat = place.location.lat()
       const lng = place.location.lng()
       const components = place.addressComponents ?? []
       const get = (type: string) => components.find(c => c.types.includes(type))?.longText ?? ''
-      const name = get('premise') || get('establishment') || get('route') || ''
+      const name = prediction.mainText?.text || get('premise') || get('establishment') || get('route') || ''
       const area = get('sublocality_level_1') || get('sublocality') || get('neighborhood') || ''
       const city = get('locality') || get('administrative_area_level_2') || ''
       const address = (place.formattedAddress ?? '').split(',').slice(0, 2).join(',').trim()
