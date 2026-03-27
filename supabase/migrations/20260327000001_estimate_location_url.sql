@@ -6,3 +6,6 @@ ALTER TABLE estimates
 
 COMMENT ON COLUMN estimates.location_id IS 'Nearest warehouse zoho_location_id resolved at creation via Haversine';
 COMMENT ON COLUMN estimates.estimate_url IS 'Zoho Books public shareable estimate URL (fetched via GET /estimates/{id} after creation)';
+
+ALTER TABLE locations
+  ADD COLUMN IF NOT EXISTS location_url TEXT;

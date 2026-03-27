@@ -291,7 +291,7 @@ export async function POST(request: NextRequest) {
   }
 
   // ── Admin notification — best-effort, never blocks response ─────────────
-  void sendAdminLocationNotification({
+  sendAdminLocationNotification({
     locationName: nearestLocationName,
     estimateNumber: zohoEstimateNumber,
     contactName: session.contact_name,
@@ -300,7 +300,7 @@ export async function POST(request: NextRequest) {
     total,
     itemCount: body.items.length,
     zohoEstimateId,
-  })
+  }).catch(err => console.error('[enquiry] admin notification failed:', err))
 
   return NextResponse.json({
     success: true,
