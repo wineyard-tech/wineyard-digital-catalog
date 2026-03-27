@@ -16,7 +16,7 @@ function fmt(n: number) {
 }
 
 const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="#F3F4F6"/><text x="200" y="140" text-anchor="middle" fill="#9CA3AF" font-size="60">📷</text><text x="200" y="180" text-anchor="middle" fill="#D1D5DB" font-size="16">No image</text></svg>`
+  `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480"><rect width="480" height="480" fill="#F3F4F6"/><text x="240" y="220" text-anchor="middle" fill="#9CA3AF" font-size="72">📷</text><text x="240" y="268" text-anchor="middle" fill="#D1D5DB" font-size="20">No image</text></svg>`
 )}`
 
 export default function ProductDetailClient({ id }: Props) {
@@ -33,7 +33,9 @@ export default function ProductDetailClient({ id }: Props) {
   const qty = cartEntry?.quantity ?? 0
   const isOOS = item?.stock_status === 'out_of_stock'
   const hasDiscount = item ? item.price_type === 'custom' && item.base_rate > item.final_price : false
-  const imgSrc = !imgError && item?.image_url ? item.image_url : PLACEHOLDER
+  const imgSrc = !imgError && item?.image_url
+    ? item.image_url
+    : item?.category_icon_url ?? PLACEHOLDER
 
   useEffect(() => {
     // Fast path: read from sessionStorage (set by ProductCard before navigating)
@@ -92,7 +94,7 @@ export default function ProductDetailClient({ id }: Props) {
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
-      image_url: item.image_url,
+      image_url: item.image_url ?? item.category_icon_url,
     })
   }
 
@@ -146,24 +148,18 @@ export default function ProductDetailClient({ id }: Props) {
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
 
-        {/* Product image */}
-        <div style={{ background: '#FFFFFF', position: 'relative', height: 280 }}>
+        {/* Product image — square 1:1 container, capped at 480px */}
+        <div style={{ background: '#FFFFFF', position: 'relative', aspectRatio: '1 / 1', maxHeight: 480 }}>
           <Image
             src={imgSrc}
             alt={item.item_name}
             fill
-            style={{ objectFit: 'contain', padding: 24 }}
+            style={{ objectFit: 'contain', padding: 8 }}
             onError={() => setImgError(true)}
             unoptimized={!item.image_url || imgError}
-            sizes="768px"
+            sizes="(max-width: 640px) 100vw, 480px"
             priority
           />
-          {/* Carousel dots (single image placeholder) */}
-          <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#0066CC' }} />
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#D1D5DB' }} />
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#D1D5DB' }} />
-          </div>
         </div>
 
         {/* Product info */}

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { CartProvider } from '../components/cart/CartContext'
+import { PricingProvider } from '../contexts/PricingContext'
 
 export const metadata: Metadata = {
   title: 'WineYard Catalog',
@@ -33,9 +34,11 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
-        <CartProvider>
-          {children}
-        </CartProvider>
+        <PricingProvider>
+          <CartProvider>
+            {children}
+          </CartProvider>
+        </PricingProvider>
       </body>
     </html>
   )

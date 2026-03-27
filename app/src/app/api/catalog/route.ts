@@ -24,10 +24,10 @@ export async function GET(request: NextRequest) {
     if (!guest) {
       return NextResponse.json({ error: 'Invalid or expired guest token' }, { status: 401 })
     }
-    // Guest — zohoContactId stays null; pricing always returns base_rate
+    // Guest — zohoContactId stays null; resolvePrice uses the General Pricebook
   } else {
     // Anonymous access — no session or guest token.
-    // zohoContactId stays null; resolvePrice returns base_rate for all items.
+    // zohoContactId stays null; resolvePrice uses the General Pricebook as fallback.
   }
 
   // ── Parse query params ────────────────────────────────────────────────────

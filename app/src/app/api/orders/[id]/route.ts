@@ -60,6 +60,7 @@ export async function GET(
     return NextResponse.json(detail)
   }
 
+  /* PHASE2_SO_ARCHIVE_START
   // kind === 'order'
   const { data, error } = await supabase
     .from('sales_orders')
@@ -91,4 +92,8 @@ export async function GET(
     line_items: lineItems,
   }
   return NextResponse.json(detail)
+  PHASE2_SO_ARCHIVE_END */
+
+  // SO detail routes are not active in Phase 1
+  return NextResponse.json({ error: 'Not found' }, { status: 404 })
 }
