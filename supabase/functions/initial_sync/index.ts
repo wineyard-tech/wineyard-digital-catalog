@@ -100,6 +100,10 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
   let categoriesFound  = 0
   let brandsFound      = 0
   let pageCount        = 0
+  // Maps zoho_category_id → its assigned display_order for this sync run.
+  // Using a Map (not Set+counter) lets us look up the correct order when the
+  // same category_id appears on multiple pages — avoids wrong-value assignment.
+  const categoryOrderMap = new Map<string, number>()
 
   for await (const { rows: zohoItems, page, hasMore } of streamZohoPages<any>(
     '/items',
@@ -127,10 +131,18 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
       }
     }
     if (categoryMap.size > 0) {
-      const categories = Array.from(categoryMap.entries()).map(([id, name]) => ({
-        zoho_category_id: id,
-        category_name:    name,
-      }))
+      const categories = Array.from(categoryMap.entries()).map(([id, name]) => {
+        if (!categoryOrderMap.has(id)) {
+          // First time seeing this category — assign next sequential order.
+          // .size is evaluated before .set(), so first category = 1, second = 2, etc.
+          categoryOrderMap.set(id, categoryOrderMap.size + 1)
+        }
+        return {
+          zoho_category_id: id,
+          category_name:    name,
+          display_order:    categoryOrderMap.get(id)!,
+        }
+      })
       const { error: catErr } = await supabase
         .from('categories')
         .upsert(categories, { onConflict: 'zoho_category_id', ignoreDuplicates: false })
