@@ -11,6 +11,7 @@ const COOKIE_MAX_AGE = 24 * 60 * 60 // 1 day
 
 interface LocationData {
   address: string
+  name: string
   area: string
   city: string
   lat?: number
@@ -44,12 +45,13 @@ function writeLocationCookie(data: LocationData) {
  */
 function parseAddressComponents(
   components: google.maps.GeocoderAddressComponent[]
-): { area: string; city: string } {
+): { name: string; area: string; city: string } {
   const get = (type: string) =>
     components.find(c => c.types.includes(type))?.long_name ?? ''
+  const name = get('premise') || get('establishment') || get('route') || ''
   const area = get('sublocality_level_1') || get('sublocality') || get('neighborhood') || ''
   const city = get('locality') || get('administrative_area_level_2') || ''
-  return { area, city }
+  return { name, area, city }
 }
 
 function buildLocationData(
@@ -57,9 +59,9 @@ function buildLocationData(
   lat: number,
   lng: number
 ): LocationData {
-  const { area, city } = parseAddressComponents(result.address_components)
+  const { name, area, city } = parseAddressComponents(result.address_components)
   const address = result.formatted_address.split(',').slice(0, 2).join(',').trim()
-  return { address, area, city, lat, lng }
+  return { address, name, area, city, lat, lng }
 }
 
 export default function LocationPage() {
@@ -68,7 +70,7 @@ export default function LocationPage() {
   const [detectState, setDetectState] = useState<DetectState>('idle')
   const [fromCatalog, setFromCatalog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompletePrediction[]>([])
+  const [suggestions, setSuggestions] = useState<google.maps.places.AutocompleteSuggestion[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
   const [toast, setToast] = useState('')
 
@@ -154,17 +156,14 @@ export default function LocationPage() {
     setSuggestions([])
     try {
       initMaps()
-      const { AutocompleteService } = await importLibrary('places') as google.maps.PlacesLibrary
-      const svc = new AutocompleteService()
-      const resp = await svc.getPlacePredictions({
+      const { AutocompleteSuggestion } = await importLibrary('places') as google.maps.PlacesLibrary
+      const { suggestions: results } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: q,
-        componentRestrictions: { country: 'in' },
-        types: ['geocode'],
+        includedRegionCodes: ['in'],
       })
       if (!mountedRef.current) return
-      const predictions = resp?.predictions ?? []
-      setSuggestions(predictions)
-      if (predictions.length === 0) showToast('No results — try a different area name')
+      setSuggestions(results)
+      if (results.length === 0) showToast('No results — try a different area name')
     } catch {
       if (mountedRef.current) showToast('Search unavailable — try again')
     } finally {
@@ -172,17 +171,24 @@ export default function LocationPage() {
     }
   }
 
-  async function handleSuggestionClick(prediction: google.maps.places.AutocompletePrediction) {
+  async function handleSuggestionClick(suggestion: google.maps.places.AutocompleteSuggestion) {
+    const prediction = suggestion.placePrediction
+    if (!prediction) return
     try {
       initMaps()
-      const { Geocoder } = await importLibrary('geocoding') as google.maps.GeocodingLibrary
-      const geocoder = new Geocoder()
-      const resp = await geocoder.geocode({ placeId: prediction.place_id })
-      const result = resp.results[0]
-      if (!result?.geometry?.location) throw new Error('No geometry')
-      const lat = result.geometry.location.lat()
-      const lng = result.geometry.location.lng()
-      confirmAndNavigate(buildLocationData(result, lat, lng))
+      const { Place } = await importLibrary('places') as google.maps.PlacesLibrary
+      const place = prediction.toPlace()
+      await place.fetchFields({ fields: ['location', 'addressComponents', 'formattedAddress'] })
+      if (!place.location) throw new Error('No location')
+      const lat = place.location.lat()
+      const lng = place.location.lng()
+      const components = place.addressComponents ?? []
+      const get = (type: string) => components.find(c => c.types.includes(type))?.longText ?? ''
+      const name = get('premise') || get('establishment') || get('route') || ''
+      const area = get('sublocality_level_1') || get('sublocality') || get('neighborhood') || ''
+      const city = get('locality') || get('administrative_area_level_2') || ''
+      const address = (place.formattedAddress ?? '').split(',').slice(0, 2).join(',').trim()
+      confirmAndNavigate({ address, name, area, city, lat, lng })
     } catch {
       showToast("Couldn't get location details — please try again")
     }
@@ -275,7 +281,7 @@ export default function LocationPage() {
         <div style={{ padding: '0 16px', flex: 1 }}>
           {suggestions.map((s, i) => (
             <button
-              key={s.place_id}
+              key={s.placePrediction?.placeId ?? i}
               onClick={() => handleSuggestionClick(s)}
               style={{
                 width: '100%',
@@ -292,7 +298,7 @@ export default function LocationPage() {
             >
               <MapPin size={16} color="#94A3B8" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
               <span style={{ fontSize: 14, color: '#374151', lineHeight: 1.4 }}>
-                {s.description}
+                {s.placePrediction?.text.text ?? ''}
               </span>
             </button>
           ))}
@@ -373,7 +379,7 @@ export default function LocationPage() {
                 <MapPin size={16} color="#059669" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
                 <div>
                   <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 600, color: '#0F172A' }}>
-                    {savedLocation.area || savedLocation.city}
+                    {savedLocation.name || savedLocation.area || savedLocation.city}
                   </p>
                   <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>
                     {savedLocation.address}
