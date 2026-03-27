@@ -4,8 +4,9 @@
     {
       "name": "WineYard Dev",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd app && npm run dev"],
-      "port": 3000
+      "runtimeArgs": ["-c", "cd app && npm run dev -- --port $PORT"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }

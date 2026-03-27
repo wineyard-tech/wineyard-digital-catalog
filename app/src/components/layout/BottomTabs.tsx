@@ -1,13 +1,12 @@
 'use client'
 
 import { usePathname, useRouter } from 'next/navigation'
-import { Home, RefreshCw, LayoutGrid, ClipboardList } from 'lucide-react'
+import { Home, RefreshCw, ClipboardList } from 'lucide-react'
 import { useScrollDirection } from '../../hooks/useScrollDirection'
 
 const TABS = [
   { label: 'Home',       icon: Home,          href: '/catalog' },
   { label: 'Buy Again',  icon: RefreshCw,      href: '/catalog/buy-again' },
-  { label: 'Categories', icon: LayoutGrid,     href: '/catalog/categories' },
   { label: 'Orders',     icon: ClipboardList,  href: '/catalog/orders' },
 ]
 
