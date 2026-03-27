@@ -128,7 +128,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
     page: number,
     append: boolean,
   ) => {
-    setTabCache(prev => ({
+    setTabCache((prev: Record<string, TabData>) => ({
       ...prev,
       [categoryName]: {
         items: append ? (prev[categoryName]?.items ?? []) : [],
@@ -143,7 +143,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
       const res = await fetch(`/api/catalog?${params}`)
       if (!res.ok) return
       const data = await res.json()
-      setTabCache(prev => ({
+      setTabCache((prev: Record<string, TabData>) => ({
         ...prev,
         [categoryName]: {
           items: append
@@ -156,7 +156,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
       }))
     } catch (err) {
       console.error(`[HomeClient] fetch failed for "${categoryName}":`, err)
-      setTabCache(prev => ({
+      setTabCache((prev: Record<string, TabData>) => ({
         ...prev,
         [categoryName]: {
           ...(prev[categoryName] ?? { items: [], page: 1, hasMore: false }),
@@ -417,7 +417,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
                     gap: 12,
                   }}
                 >
-                  {items.map((item) => (
+                  {items.map((item: CatalogItem) => (
                     <ProductCard key={item.zoho_item_id} item={item} guestMode={false} />
                   ))}
                 </div>

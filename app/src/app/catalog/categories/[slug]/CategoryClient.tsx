@@ -1,7 +1,8 @@
 // ARCHIVED: Category detail view replaced by category tab in Home screen.
 // See app/src/components/catalog/HomeClient.tsx for the new implementation.
 
-export default function CategoryClient(_props: { categoryName: string; contactName: string | null; initialItems: never[] }) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export default function CategoryClient(_props: { categoryName: string; contactName: string | null; initialItems: any[] }) {
   return null
 }
 
