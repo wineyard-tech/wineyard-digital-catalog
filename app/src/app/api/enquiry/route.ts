@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   // ── Compute totals + cart hash ────────────────────────────────────────────
   const subtotal = body.items.reduce((sum: number, item: CartItem) => sum + item.line_total, 0)
   const tax = Math.round(subtotal * 0.18 * 100) / 100
-  const total = Math.round((subtotal + tax) * 100) / 100
+  const total = subtotal  // tax is shown separately; total = subtotal (pre-tax)
   const cartHash = buildCartHash(body.items)
 
   const supabase = createServiceClient()
