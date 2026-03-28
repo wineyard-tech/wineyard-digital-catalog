@@ -21,6 +21,22 @@ interface WaApiResponse {
 const MAX_ITEMS_IN_PARAM = 3
 
 /**
+ * Extracts the CEstimateID query-param value from a Zoho estimate portal URL.
+ * This is the dynamic suffix needed for the WhatsApp template URL button.
+ * Example: "https://zohosecurepay.in/books/wineyard/secure?CEstimateID=2-54c..."
+ *           → "2-54c..."
+ */
+function extractCEstimateId(estimateUrl: string | null): string | null {
+  if (!estimateUrl) return null
+  try {
+    const url = new URL(estimateUrl)
+    return url.searchParams.get('CEstimateID')
+  } catch {
+    return null
+  }
+}
+
+/**
  * Formats cart items into a single flat string safe for WhatsApp template parameters.
  * Meta disallows newlines/tabs in parameter values, so items are pipe-separated.
  * Caps at MAX_ITEMS_IN_PARAM to stay well within the 1,024-char parameter limit
@@ -233,7 +249,9 @@ export async function sendEstimateNotification(
             type: 'button',
             sub_type: 'url',
             index: '0',
-            parameters: [{ type: 'text', text: data.zohoEstimateId }],
+            // CEstimateID is the dynamic suffix for the Zoho estimate portal URL button.
+            // Falls back to zohoEstimateId if estimate_url is not yet available.
+            parameters: [{ type: 'text', text: extractCEstimateId(data.estimateUrl) ?? data.zohoEstimateId }],
           },
         ],
       },
