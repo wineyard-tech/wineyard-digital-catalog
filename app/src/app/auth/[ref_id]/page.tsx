@@ -53,7 +53,7 @@ export default async function AuthPage({ params }: AuthPageProps) {
           📷
         </div>
         <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: '#1A1A2E' }}>
-          WineYard Catalog
+          Wine Yard Catalog
         </h1>
         <p style={{ margin: 0, fontSize: 14, color: '#6B7280' }}>
           Enter the 6-digit OTP sent to your WhatsApp
@@ -75,7 +75,7 @@ export default async function AuthPage({ params }: AuthPageProps) {
       </div>
 
       <p style={{ marginTop: 20, fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>
-        Didn&apos;t get the OTP? Send any message to WineYard on WhatsApp to get a new link.
+        Didn&apos;t get the OTP? Send any message to Wine Yard on WhatsApp to get a new link.
       </p>
     </main>
   )
