@@ -106,9 +106,10 @@ export async function GET(
     id: estimate.public_id as string,
     doc_number: estimate.estimate_number,
     date: estimate.date ?? estimate.created_at?.slice(0, 10) ?? '',
-    total: estimate.total,
-    subtotal: estimate.subtotal ?? 0,
-    tax_total: estimate.tax_total ?? 0,
+    // PostgREST returns DECIMAL columns as strings — coerce to number for fmt()
+    total: Number(estimate.total),
+    subtotal: Number(estimate.subtotal ?? 0),
+    tax_total: Number(estimate.tax_total ?? 0),
     status: computeStatus({
       status: estimate.status,
       created_at: estimate.created_at,
