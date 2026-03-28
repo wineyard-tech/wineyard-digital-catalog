@@ -36,7 +36,6 @@ export default function ProductDetailClient({ id }: Props) {
 
   const cartEntry = item ? items.find((i) => i.zoho_item_id === item.zoho_item_id) : null
   const qty = cartEntry?.quantity ?? 0
-  const isOOS = item?.stock_status === 'out_of_stock'
   const hasDiscount = item ? item.price_type === 'custom' && item.base_rate > item.final_price : false
   const imgSrc = !imgError && item?.image_url
     ? item.image_url
@@ -104,7 +103,7 @@ export default function ProductDetailClient({ id }: Props) {
   }, [searchQuery])
 
   function handleAdd() {
-    if (!item || isOOS) return
+    if (!item) return
     addItem({
       zoho_item_id: item.zoho_item_id,
       item_name: item.item_name,
@@ -269,22 +268,6 @@ export default function ProductDetailClient({ id }: Props) {
             )}
           </div>
 
-          {/* Stock status hint */}
-          {item.stock_status === 'available' && item.available_stock > 0 && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#059669', fontWeight: 500 }}>
-              ✓ In stock ({item.available_stock} units)
-            </p>
-          )}
-          {item.stock_status === 'limited' && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#B45309', fontWeight: 500 }}>
-              ⚠ Limited — only {item.available_stock} left
-            </p>
-          )}
-          {isOOS && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748B', fontWeight: 500 }}>
-              Currently out of stock
-            </p>
-          )}
         </div>
 
         {/* Product Details accordion */}
@@ -364,11 +347,7 @@ export default function ProductDetailClient({ id }: Props) {
         </div>
 
         {/* Add / Qty CTA — compact fixed width */}
-        {isOOS ? (
-          <button disabled style={{ width: 130, background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700 }}>
-            Out of Stock
-          </button>
-        ) : qty === 0 ? (
+        {qty === 0 ? (
           <button
             onClick={handleAdd}
             style={{ width: 130, background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
