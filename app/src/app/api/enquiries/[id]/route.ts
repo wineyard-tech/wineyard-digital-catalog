@@ -95,7 +95,7 @@ export async function GET(
       quantity: li.quantity,
       rate: li.rate,
       tax_percentage: li.tax_percentage,
-      line_total: li.line_total,
+      line_total: li.line_total ?? (li.rate * li.quantity) ?? 0,
       image_url: stock?.image_url ?? null,
       available_stock,
       stock_status,

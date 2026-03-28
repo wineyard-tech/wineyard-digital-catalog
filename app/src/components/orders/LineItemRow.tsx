@@ -15,7 +15,7 @@ export interface LineItem {
 }
 
 function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+  return '₹' + (n ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
 const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
