@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  User, ChevronDown, ArrowLeft, LogOut, ClipboardList, MapPin,
+  User, ArrowLeft, LogOut, ClipboardList,
   Camera, Plug, Fingerprint, Cable, Link2, Tv, Zap,
   HardDrive, Cpu, Layers, Monitor, Server, Network,
   Sun, Wrench, Wifi, Package, Box, Router, BatteryCharging,
@@ -12,15 +12,16 @@ import {
 import type { CatalogItem } from '@/types/catalog'
 import ProductCard from '@/components/catalog/ProductCard'
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
-import SearchBar from '@/components/catalog/SearchBar'
+import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { useSwipe } from '@/hooks/useSwipe'
 
 // ── Height constants ─────────────────────────────────────────────────────────
-const HEADER_FULL      = 120  // location row (44) + padding + search (44) + shadow
-const HEADER_COLLAPSED = 52   // search bar only when location row max-height → 0
-const TAB_BAR_H        = 44
-const BOTTOM_SPACER    = 140  // clears CartBar (52px) + BottomTabs (60px) + breathing room
+// Location row: padding 10+4 + avatar 34 = 48px
+// Search bar:   padding 8+8  + input 40 = 56px
+const HEADER_FULL   = 104  // location row (48) + search bar (56) when expanded
+const TAB_BAR_H     = 44
+const BOTTOM_SPACER = 140  // clears CartBar (52px) + BottomTabs (60px) + breathing room
 
 // ── Category icon mapping ────────────────────────────────────────────────────
 function getCategoryIcon(name: string): LucideIcon {
@@ -53,6 +54,7 @@ export interface Category {
   category_name: string
   display_order: number
   icon_url: string | null
+  product_count?: number
 }
 
 interface TabData {
@@ -195,115 +197,79 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => router.push('/auth/login'))
   }
 
-  const tabTop = hidden ? HEADER_COLLAPSED : HEADER_FULL
-
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={{ maxWidth: 768, margin: '0 auto' }}>
 
-      {/* ── Fixed Header ──────────────────────────────────────────────────── */}
+      {/* ── Fixed Header (includes tab bar so there's no gap) ─────────────── */}
       <header
         style={{
           position: 'fixed',
           top: 0, left: 0, right: 0,
           maxWidth: 768, margin: '0 auto',
           background: '#FFFFFF',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
           zIndex: 30,
         }}
       >
-        {/* Location row — collapses on scroll-down */}
-        <div style={{ overflow: 'hidden', maxHeight: hidden ? 0 : 60, transition: 'max-height 0.3s ease' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
-            <button
-              onClick={() => router.push('/location?from=catalog')}
-              style={{
-                background: 'none', border: 'none',
-                display: 'flex', alignItems: 'center', gap: 4,
-                cursor: 'pointer', padding: 0,
-                fontSize: 14, fontWeight: 500, color: '#1A1A2E',
-              }}
-            >
-              <MapPin size={15} color="#0066CC" aria-hidden="true" />
-              <span>{locationArea ?? 'Set location'}</span>
-              <ChevronDown size={15} color="#6B7280" />
-            </button>
-            <button
-              onClick={() => contactName ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
-              aria-label={contactName ? `Hi, ${contactName}` : 'Login'}
-              style={{
-                width: 34, height: 34, borderRadius: '50%',
-                background: '#E6F0FA', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
-            >
-              <User size={18} color="#0066CC" />
-            </button>
-          </div>
-        </div>
-
-        {/* Search bar — always visible; navigates to /catalog?q=... */}
-        <SearchBar
-          onSearch={(q) => {
-            if (q.trim()) router.push(`/catalog?q=${encodeURIComponent(q)}`)
-          }}
+        <CatalogPageHeader
+          hidden={hidden}
+          locationArea={locationArea}
+          contactName={contactName}
+          onAvatarClick={() => contactName ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
+          onSearch={(q) => { if (q.trim()) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
         />
-      </header>
 
-      {/* ── Fixed Category Tab Bar ─────────────────────────────────────────── */}
-      <div
-        style={{
-          position: 'fixed',
-          top: tabTop,
-          left: 0, right: 0,
-          maxWidth: 768, margin: '0 auto',
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E5E7EB',
-          zIndex: 20,
-          transition: 'top 0.3s ease',
-        }}
-      >
+        {/* Category tab bar — pill style, lives inside header to eliminate positional gap */}
         <div
           style={{
-            display: 'flex',
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            padding: '0 8px',
-            height: TAB_BAR_H,
-            alignItems: 'center',
-            gap: 4,
-          } as React.CSSProperties}
+            borderBottom: '1px solid #E5E7EB',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
+            background: '#F8FAFC',
+          }}
         >
-          {allTabs.map((tab) => {
-            const isActive = activeTab === tab
-            const label = tab === 'all' ? 'All Categories' : tab
-            return (
-              <button
-                key={tab}
-                ref={isActive ? activeTabButtonRef : null}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  flexShrink: 0,
-                  padding: '6px 14px',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: isActive ? '2px solid #0066CC' : '2px solid transparent',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
-                  color: isActive ? '#0066CC' : '#6B7280',
-                  whiteSpace: 'nowrap',
-                  lineHeight: `${TAB_BAR_H - 2}px`,
-                  transition: 'color 0.15s ease, border-color 0.15s ease',
-                }}
-              >
-                {label}
-              </button>
-            )
-          })}
+          <div
+            style={{
+              display: 'flex',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              padding: '6px 8px',
+              height: TAB_BAR_H,
+              alignItems: 'center',
+              gap: 6,
+            } as React.CSSProperties}
+          >
+            {allTabs.map((tab) => {
+              const isActive = activeTab === tab
+              const label = tab === 'all' ? 'All' : tab
+              return (
+                <button
+                  key={tab}
+                  ref={isActive ? activeTabButtonRef : null}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    flexShrink: 0,
+                    padding: '5px 14px',
+                    background: isActive ? '#0066CC' : '#FFFFFF',
+                    border: isActive ? 'none' : '1px solid #E2E8F0',
+                    borderRadius: 20,
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    fontWeight: isActive ? 600 : 500,
+                    color: isActive ? '#FFFFFF' : '#475569',
+                    whiteSpace: 'nowrap',
+                    lineHeight: '20px',
+                    transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+                    boxShadow: isActive ? '0 1px 4px rgba(0,102,204,0.3)' : 'none',
+                  }}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      </header>
 
       {/* ── Spacer below fixed header + tab bar ──────────────────────────────── */}
       <div style={{ height: HEADER_FULL + TAB_BAR_H }} aria-hidden="true" />
@@ -340,7 +306,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
                       aspectRatio: '1 / 1.2',
                     }}
                   >
-                    {/* Thumbnail area — image or icon fallback */}
+                    {/* Thumbnail area — padded so image doesn't bleed to edges */}
                     <div
                       style={{
                         flex: 1,
@@ -349,6 +315,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
                         alignItems: 'center',
                         justifyContent: 'center',
                         overflow: 'hidden',
+                        padding: 10,
                       }}
                     >
                       {cat.icon_url ? (
@@ -356,24 +323,24 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
                         <img
                           src={cat.icon_url}
                           alt={cat.category_name}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                         />
                       ) : (
-                        <Icon size={32} color="#64748B" strokeWidth={1.5} />
+                        <Icon size={34} color="#64748B" strokeWidth={1.5} />
                       )}
                     </div>
                     {/* Name strip */}
                     <div
                       style={{
                         flexShrink: 0,
-                        padding: '5px 6px 6px',
+                        padding: '6px 8px 8px',
                         borderTop: '1px solid #F1F5F9',
                         background: '#FFFFFF',
                       }}
                     >
                       <span
                         style={{
-                          fontSize: 11,
+                          fontSize: 13,
                           fontWeight: 600,
                           color: '#1A1A2E',
                           lineHeight: 1.3,
@@ -385,6 +352,11 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
                       >
                         {cat.category_name}
                       </span>
+                      {cat.product_count != null && cat.product_count > 0 && (
+                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#9CA3AF', lineHeight: 1.2 }}>
+                          {cat.product_count} products
+                        </p>
+                      )}
                     </div>
                   </button>
                 )

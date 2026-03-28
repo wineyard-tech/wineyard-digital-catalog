@@ -2,8 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, MapPin, ChevronDown, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
-import SearchBar from '@/components/catalog/SearchBar'
+import { User, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
+import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
 import ProductCard from '@/components/catalog/ProductCard'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { useAuth } from '@/hooks/useAuth'
@@ -138,40 +138,23 @@ export default function BuyAgainPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Sticky catalog-style header ─────────────────────────────────────────────
+  // ── Sticky catalog-style header (shared component) ──────────────────────────
   const header = (
     <header
       style={{
         position: 'fixed', top: 0, left: 0, right: 0,
         maxWidth: 768, margin: '0 auto',
-        background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+        background: '#FFFFFF',
+        borderBottom: '1px solid #E5E7EB',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
         zIndex: 30,
       }}
     >
-      {/* Location row — collapses on scroll-down */}
-      <div style={{ overflow: 'hidden', maxHeight: hidden ? 0 : 60, transition: 'max-height 0.3s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
-          <button
-            onClick={() => router.push('/location?from=catalog')}
-            style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', padding: 0, fontSize: 14, fontWeight: 500, color: '#1A1A2E' }}
-          >
-            <MapPin size={15} color="#0066CC" aria-hidden="true" />
-            <span>{locationArea ?? 'Set location'}</span>
-            <ChevronDown size={15} color="#6B7280" />
-          </button>
-
-          <button
-            onClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
-            aria-label={isAuthenticated ? `Hi, ${user?.contact_name}` : 'Login'}
-            style={{ width: 34, height: 34, borderRadius: '50%', background: '#E6F0FA', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <User size={18} color="#0066CC" />
-          </button>
-        </div>
-      </div>
-
-      {/* Search — always visible, navigates to catalog */}
-      <SearchBar
+      <CatalogPageHeader
+        hidden={hidden}
+        locationArea={locationArea}
+        contactName={isAuthenticated ? (user?.contact_name ?? null) : null}
+        onAvatarClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
         onSearch={(q) => { if (q) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
       />
     </header>
@@ -184,7 +167,7 @@ export default function BuyAgainPage() {
     return (
       <div style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 140 }}>
         {header}
-        <div style={{ height: 100 }} aria-hidden="true" />
+        <div style={{ height: 104 }} aria-hidden="true" />
 
         {/* Loading spinner */}
         {dataLoading && (
@@ -242,7 +225,7 @@ export default function BuyAgainPage() {
   return (
     <div style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 140 }}>
       {header}
-      <div style={{ height: 100 }} aria-hidden="true" />
+      <div style={{ height: 104 }} aria-hidden="true" />
 
       {/* Sort bar */}
       <div style={{ padding: '12px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
