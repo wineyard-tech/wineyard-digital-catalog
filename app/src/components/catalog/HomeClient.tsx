@@ -67,10 +67,11 @@ interface TabData {
 interface HomeClientProps {
   contactName: string | null
   categories: Category[]
+  initialQuery?: string
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
-export default function HomeClient({ contactName, categories }: HomeClientProps) {
+export default function HomeClient({ contactName, categories, initialQuery = '' }: HomeClientProps) {
   const router = useRouter()
   const hidden = useScrollDirection()
 
@@ -79,6 +80,11 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
   const [locationArea, setLocationArea] = useState<string | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
+
+  // ── Search state ─────────────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState(initialQuery)
+  const [searchItems, setSearchItems] = useState<CatalogItem[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
 
   const sentinelRef = useRef<HTMLDivElement>(null)
   const activeTabRef = useRef<string>('all')
@@ -191,6 +197,21 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
     return () => observer.disconnect()
   }, [activeTab, fetchTabProducts])
 
+  // ── Fetch search results when query changes ───────────────────────────────
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchItems([])
+      return
+    }
+    setSearchLoading(true)
+    const params = new URLSearchParams({ q: searchQuery.trim() })
+    fetch(`/api/catalog?${params}`)
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(data => setSearchItems(data.items ?? []))
+      .catch(() => setSearchItems([]))
+      .finally(() => setSearchLoading(false))
+  }, [searchQuery])
+
   // ── Logout ───────────────────────────────────────────────────────────────
   function handleLogout() {
     setLoggingOut(true)
@@ -277,8 +298,34 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
       {/* ── Swipeable Content Area ────────────────────────────────────────────── */}
       <div onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 
+        {/* SEARCH RESULTS — shown when a query is active */}
+        {searchQuery.trim() && (
+          <div style={{ padding: '12px 12px 0' }}>
+            {searchLoading ? (
+              <LoadingSkeleton count={6} />
+            ) : searchItems.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 24px', color: '#6B7280' }}>
+                <p style={{ fontSize: 32, margin: '0 0 12px' }}>🔍</p>
+                <p style={{ fontSize: 15, fontWeight: 600, margin: '0 0 4px', color: '#374151' }}>No results for &ldquo;{searchQuery}&rdquo;</p>
+                <p style={{ fontSize: 13, margin: 0 }}>Try a different keyword or browse by category</p>
+              </div>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 10px', fontSize: 13, color: '#6B7280' }}>
+                  {searchItems.length} result{searchItems.length !== 1 ? 's' : ''} for &ldquo;{searchQuery}&rdquo;
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+                  {searchItems.map((item: CatalogItem) => (
+                    <ProductCard key={item.zoho_item_id} item={item} guestMode={false} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ALL CATEGORIES TAB */}
-        {activeTab === 'all' && (
+        {!searchQuery.trim() && activeTab === 'all' && (
           <div style={{ padding: '12px 12px 0' }}>
             <div
               style={{
@@ -366,7 +413,7 @@ export default function HomeClient({ contactName, categories }: HomeClientProps)
         )}
 
         {/* INDIVIDUAL CATEGORY TABS */}
-        {activeTab !== 'all' && (() => {
+        {!searchQuery.trim() && activeTab !== 'all' && (() => {
           const cached = tabCache[activeTab]
           const isLoading = !cached || cached.loading
           const items = cached?.items ?? []

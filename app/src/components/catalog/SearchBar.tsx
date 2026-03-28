@@ -6,10 +6,11 @@ import { Search } from 'lucide-react'
 interface SearchBarProps {
   onSearch: (query: string) => void
   placeholder?: string
+  defaultValue?: string
 }
 
-export default function SearchBar({ onSearch, placeholder = 'Search products, SKU, brand…' }: SearchBarProps) {
-  const [value, setValue] = useState('')
+export default function SearchBar({ onSearch, placeholder = 'Search products, SKU, brand…', defaultValue = '' }: SearchBarProps) {
+  const [value, setValue] = useState(defaultValue)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {

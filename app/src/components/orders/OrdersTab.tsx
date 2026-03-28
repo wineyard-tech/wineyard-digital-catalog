@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { TransactionCard } from './TransactionCard'
+import { OrderRowSkeleton } from './OrderRowSkeleton'
 import type { TransactionListItem } from '@/types/catalog'
 
 function Spinner() {
@@ -93,11 +94,7 @@ export function OrdersTab() {
   }, [fetchPage])
 
   if (!initialDone && loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-        <Spinner />
-      </div>
-    )
+    return <OrderRowSkeleton count={4} />
   }
 
   if (error && items.length === 0) {
