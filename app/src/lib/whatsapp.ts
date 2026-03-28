@@ -404,7 +404,7 @@ export async function sendAdminLocationNotification(
               { type: 'text', parameter_name: 'contact_name',         text: data.contactName },
               { type: 'text', parameter_name: 'contact_phone_number', text: data.contactPhone },
               { type: 'text', parameter_name: 'contact_location',     text: data.contactLocation ?? 'Unknown' },
-              { type: 'text', parameter_name: 'total_amount',         text: fmt(data.total) },
+              { type: 'text', parameter_name: 'total_amount',         text: data.total.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) },
               { type: 'text', parameter_name: 'item_count',           text: String(data.itemCount) },
             ],
           },
