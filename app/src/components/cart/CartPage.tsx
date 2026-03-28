@@ -213,8 +213,14 @@ export default function CartPage() {
           {quoteResult.whatsapp_sent ? 'Check your WhatsApp — your quote is on its way.' : 'Quote saved. WhatsApp delivery may be delayed.'}
         </p>
         <Link
+          href={`/catalog/orders/enquiry/${quoteResult.estimate_id}`}
+          style={{ display: 'inline-block', background: '#0066CC', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, marginBottom: 12, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
+        >
+          View Quote
+        </Link>
+        <Link
           href="/catalog"
-          style={{ display: 'inline-block', background: '#059669', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700 }}
+          style={{ display: 'inline-block', background: '#059669', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
         >
           Back to Catalog
         </Link>

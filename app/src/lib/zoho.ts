@@ -250,6 +250,30 @@ export async function createSalesOrder(
 }
 
 /**
+ * Marks a Zoho estimate as "sent".
+ * Must be called after createEstimate so the estimate is visible to the customer
+ * and the public estimate_url becomes available on the GET response.
+ * Throws on failure — callers should treat this as best-effort and catch.
+ */
+export async function markEstimateSent(zohoEstimateId: string): Promise<void> {
+  const token = await getAccessToken()
+  const orgId = process.env.ZOHO_ORG_ID!
+
+  const res = await fetch(
+    `${ZOHO_API_BASE}/estimates/${zohoEstimateId}/status/sent?organization_id=${orgId}`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    }
+  )
+
+  if (!res.ok) {
+    const errText = await res.text()
+    throw new Error(`Zoho mark estimate sent failed: ${res.status} — ${errText}`)
+  }
+}
+
+/**
  * Marks a Zoho estimate as "accepted" after a sales order has been placed.
  * This is a best-effort call — failure here does not block the order flow.
  */
