@@ -260,9 +260,9 @@ serve(async (req: Request) => {
   const t0 = Date.now()
 
   // ── Auth ───────────────────────────────────────────────────────────────────
-  const expectedToken = Deno.env.get('ZOHO_WEBHOOK_TOKEN_INVOICES')
+  const expectedToken = Deno.env.get('ZOHO_WEBHOOK_TOKEN')
   if (!expectedToken) {
-    logger.error('AUTH_FAIL', { reason: 'ZOHO_WEBHOOK_TOKEN_INVOICES env var not set' })
+    logger.error('AUTH_FAIL', { reason: 'ZOHO_WEBHOOK_TOKEN env var not set' })
     return new Response('Unauthorized', { status: 401 })
   }
 
