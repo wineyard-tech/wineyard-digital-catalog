@@ -570,6 +570,13 @@ async function syncAllContacts(
         console.log(`[contacts] "${contact.contact_name}" phone from ${phoneSource}: ${phone}`)
       }
 
+      // Extract cf_online_catalogue_access from Zoho custom_fields array
+      const cfFields: Array<{ api_name?: string; value?: unknown }> =
+        Array.isArray(contact.custom_fields) ? contact.custom_fields : []
+      const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
+      const online_catalogue_access =
+        cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
+
       contactRows.push({
         zoho_contact_id:            contact.contact_id,
         contact_name:               contact.contact_name,
@@ -587,6 +594,7 @@ async function syncAllContacts(
         currency_id:                contact.currency_id || null,
         currency_code:              contact.currency_code || 'INR',
         custom_fields:              contact.custom_fields ?? {},
+        online_catalogue_access,
         created_time:               contact.created_time || null,
         last_modified_time:         contact.last_modified_time || null,
         updated_at:                 new Date().toISOString(),
