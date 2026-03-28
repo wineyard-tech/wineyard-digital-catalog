@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Search, Share2, Plus, Minus, X } from 'lucide-react'
+import { ArrowLeft, Search, Plus, Minus, X } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
@@ -193,17 +193,6 @@ export default function ProductDetailClient({ id }: Props) {
             <div style={{ flex: 1 }} />
             <button onClick={() => setSearchOpen(true)} aria-label="Search" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
               <Search size={20} color="#6B7280" />
-            </button>
-            <button
-              aria-label="Share"
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({ title: item.item_name, url: window.location.href }).catch(() => {})
-                }
-              }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}
-            >
-              <Share2 size={20} color="#6B7280" />
             </button>
           </div>
         )}
