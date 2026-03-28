@@ -80,7 +80,7 @@ export default function CartPage() {
   }
 
   const gst = Math.round(subtotal * GST_RATE)
-  const total = subtotal + gst
+  const total = subtotal  // tax shown as a line item; "To Pay" = subtotal (pre-tax)
   const itemCount = items.reduce((s, i) => s + i.quantity, 0)
 
   // ── Check auth state on mount ─────────────────────────────────────────────
