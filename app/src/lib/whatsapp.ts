@@ -370,8 +370,8 @@ export interface AdminLocationNotificationData {
 
 /**
  * Sends a new-estimate notification to the admin WhatsApp number.
- * Primary: `wineyard_location_notification` WABA template (in Meta review — will fail until approved).
- * Fallback: plain text matching the template body exactly.
+ * Primary: `wineyard_location_notification` WABA template (approved).
+ * Fallback: plain text to WHATSAPP_ADMIN_NUMBER if the template call fails for any reason.
  * Best-effort — never throws, never blocks the main response.
  */
 export async function sendAdminLocationNotification(
@@ -417,9 +417,10 @@ export async function sendAdminLocationNotification(
         ],
       },
     })
+    console.log(`[whatsapp] admin location notification sent via template for ${data.estimateNumber}`)
     return
-  } catch {
-    // Template in review — fall through to plain-text fallback
+  } catch (err) {
+    console.warn('[whatsapp] wineyard_location_notification template failed, falling back to plain text:', err)
   }
 
   // Plain-text fallback — matches template body exactly

@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
@@ -212,18 +211,18 @@ export default function CartPage() {
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
           {quoteResult.whatsapp_sent ? 'Check your WhatsApp — your quote is on its way.' : 'Quote saved. WhatsApp delivery may be delayed.'}
         </p>
-        <Link
-          href={`/catalog/orders/enquiry/${quoteResult.estimate_id}`}
-          style={{ display: 'inline-block', background: '#0066CC', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, marginBottom: 12, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
+        <button
+          onClick={() => router.push(`/catalog/orders/enquiry/${quoteResult.estimate_id}`)}
+          style={{ background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 12, width: '100%', maxWidth: 280 }}
         >
-          View Quote
-        </Link>
-        <Link
-          href="/catalog"
-          style={{ display: 'inline-block', background: '#059669', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
+          View Estimate
+        </button>
+        <button
+          onClick={() => router.push('/catalog')}
+          style={{ background: 'none', border: '1.5px solid #E5E7EB', color: '#6B7280', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%', maxWidth: 280 }}
         >
-          Back to Catalog
-        </Link>
+          Go to Catalog
+        </button>
       </div>
     )
   }
