@@ -105,6 +105,7 @@ export default function BuyAgainPage() {
   const [unauthenticated, setUnauthenticated] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Bestsellers (always shown in the empty/guest state)
   const [bestsellers, setBestsellers] = useState<CatalogItem[]>([])
@@ -138,6 +139,19 @@ export default function BuyAgainPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // ── Local search filter ──────────────────────────────────────────────────────
+  function matchesQuery(q: string, ...fields: (string | undefined | null)[]) {
+    const lower = q.toLowerCase()
+    return fields.some(f => f?.toLowerCase().includes(lower))
+  }
+  const trimmedQuery = searchQuery.trim()
+  const displayProducts = trimmedQuery
+    ? products.filter(p => matchesQuery(trimmedQuery, p.item_name, p.sku, p.brand, p.category_name))
+    : products
+  const displayBestsellers = trimmedQuery
+    ? bestsellers.filter(b => matchesQuery(trimmedQuery, b.item_name, b.sku, b.brand, b.category_name))
+    : bestsellers
+
   // ── Sticky catalog-style header ─────────────────────────────────────────────
   const header = (
     <header
@@ -170,9 +184,10 @@ export default function BuyAgainPage() {
         </div>
       </div>
 
-      {/* Search — always visible, navigates to catalog */}
+      {/* Search — filters within this tab */}
       <SearchBar
-        onSearch={(q) => { if (q) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
+        onSearch={setSearchQuery}
+        defaultValue={searchQuery}
       />
     </header>
   )
@@ -217,17 +232,22 @@ export default function BuyAgainPage() {
         )}
 
         {/* Bestsellers grid */}
-        {!dataLoading && bestsellers.length > 0 && (
+        {!dataLoading && displayBestsellers.length > 0 && (
           <div style={{ padding: '20px 12px 0' }}>
             <p style={{ margin: '0 0 12px 4px', fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>
-              Bestsellers
+              {trimmedQuery ? 'Matching products' : 'Bestsellers'}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {bestsellers.map((item) => (
+              {displayBestsellers.map((item) => (
                 <ProductCard key={item.zoho_item_id} item={item} />
               ))}
             </div>
           </div>
+        )}
+        {!dataLoading && trimmedQuery && displayBestsellers.length === 0 && (
+          <p style={{ padding: '32px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+            No matching products
+          </p>
         )}
 
         {/* Profile sheet */}
@@ -237,7 +257,7 @@ export default function BuyAgainPage() {
   }
 
   // ── Has orders — grouped by category with sort toggle ──────────────────────
-  const groups = groupByCategory(applySortMode(products, sortMode))
+  const groups = groupByCategory(applySortMode(displayProducts, sortMode))
 
   return (
     <div style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 140 }}>
@@ -247,13 +267,20 @@ export default function BuyAgainPage() {
       {/* Sort bar */}
       <div style={{ padding: '12px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <p style={{ margin: 0, fontSize: 13, color: '#9CA3AF' }}>
-          {products.length} product{products.length !== 1 ? 's' : ''}
+          {displayProducts.length} product{displayProducts.length !== 1 ? 's' : ''}
         </p>
         <div style={{ display: 'flex', gap: 6 }}>
           <SortButton mode="recent" label="Recent" Icon={Clock} current={sortMode} onSelect={setSortMode} />
           <SortButton mode="popular" label="Most Ordered" Icon={TrendingUp} current={sortMode} onSelect={setSortMode} />
         </div>
       </div>
+
+      {/* No results when searching */}
+      {trimmedQuery && groups.length === 0 && (
+        <p style={{ padding: '40px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+          No matching products
+        </p>
+      )}
 
       {/* Category groups */}
       <div style={{ marginTop: 8 }}>
