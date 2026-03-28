@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Search, Share2, Plus, Minus } from 'lucide-react'
+import { ArrowLeft, Search, Plus, Minus, X } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
@@ -28,10 +28,14 @@ export default function ProductDetailClient({ id }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false)
   const [imgError, setImgError] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<CatalogItem[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cartEntry = item ? items.find((i) => i.zoho_item_id === item.zoho_item_id) : null
   const qty = cartEntry?.quantity ?? 0
-  const isOOS = item?.stock_status === 'out_of_stock'
   const hasDiscount = item ? item.price_type === 'custom' && item.base_rate > item.final_price : false
   const imgSrc = !imgError && item?.image_url
     ? item.image_url
@@ -84,8 +88,22 @@ export default function ProductDetailClient({ id }: Props) {
       .finally(() => setLoading(false))
   }, [id])
 
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return }
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => {
+      setSearchLoading(true)
+      fetch(`/api/catalog?q=${encodeURIComponent(searchQuery.trim())}`)
+        .then(r => r.ok ? r.json() : { items: [] })
+        .then(data => setSearchResults(data.items ?? []))
+        .catch(() => setSearchResults([]))
+        .finally(() => setSearchLoading(false))
+    }, 300)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [searchQuery])
+
   function handleAdd() {
-    if (!item || isOOS) return
+    if (!item) return
     addItem({
       zoho_item_id: item.zoho_item_id,
       item_name: item.item_name,
@@ -124,29 +142,90 @@ export default function ProductDetailClient({ id }: Props) {
     <div style={{ maxWidth: 768, margin: '0 auto', background: '#F8FAFB', minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
-      <header style={{ position: 'sticky', top: 0, background: '#FFFFFF', zIndex: 20, display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 12, borderBottom: '1px solid #F3F4F6' }}>
-        <button onClick={() => router.back()} aria-label="Go back" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
-          <ArrowLeft size={22} color="#1A1A2E" />
-        </button>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => router.push('/catalog')} aria-label="Search" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
-          <Search size={20} color="#6B7280" />
-        </button>
-        <button
-          aria-label="Share"
-          onClick={() => {
-            if (navigator.share) {
-              navigator.share({ title: item.item_name, url: window.location.href }).catch(() => {})
-            }
-          }}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}
-        >
-          <Share2 size={20} color="#6B7280" />
-        </button>
+      <header style={{ position: 'sticky', top: 0, background: '#FFFFFF', zIndex: 20, borderBottom: '1px solid #F3F4F6' }}>
+        {searchOpen ? (
+          <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', gap: 8 }}>
+            <button
+              data-no-haptic
+              onClick={() => { setSearchOpen(false); setSearchQuery(''); setSearchResults([]) }}
+              aria-label="Close search"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex', flexShrink: 0 }}
+            >
+              <ArrowLeft size={22} color="#1A1A2E" />
+            </button>
+            <div style={{ flex: 1, position: 'relative' }}>
+              {/* Outer span: centering only */}
+              <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', display: 'flex' }}>
+                <Search size={15} color="#9CA3AF" />
+              </span>
+              <input
+                autoFocus
+                type="search"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search products, SKU, brand…"
+                style={{
+                  width: '100%', boxSizing: 'border-box' as const,
+                  background: '#F3F4F6', border: 'none', borderRadius: 10,
+                  padding: '9px 32px 9px 30px', fontSize: 14,
+                  color: '#1A1A2E', outline: 'none',
+                }}
+                aria-label="Search products"
+              />
+              {searchQuery && (
+                <button
+                  data-no-haptic
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear"
+                  style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex' }}
+                >
+                  <X size={14} color="#9CA3AF" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 12 }}>
+            <button onClick={() => router.back()} aria-label="Go back" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+              <ArrowLeft size={22} color="#1A1A2E" />
+            </button>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setSearchOpen(true)} aria-label="Search" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, display: 'flex' }}>
+              <Search size={20} color="#6B7280" />
+            </button>
+          </div>
+        )}
       </header>
 
-      {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
+      {/* Search results overlay — replaces body when search is open */}
+      {searchOpen && (
+        <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100, background: '#FFFFFF' }}>
+          {!searchQuery.trim() ? (
+            <p style={{ padding: '32px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+              Type to search products
+            </p>
+          ) : searchLoading ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="skeleton" style={{ borderRadius: 12, height: 200 }} />
+              ))}
+            </div>
+          ) : searchResults.length === 0 ? (
+            <p style={{ padding: '32px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+              No products found for &ldquo;{searchQuery}&rdquo;
+            </p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, padding: 12 }}>
+              {searchResults.map(r => (
+                <ProductCard key={r.zoho_item_id} item={r} />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Scrollable body — hidden when search is open */}
+      {!searchOpen && <div style={{ flex: 1, overflowY: 'auto', paddingBottom: 100 }}>
 
         {/* Product image — square 1:1 container, capped at 480px */}
         <div style={{ background: '#FFFFFF', position: 'relative', aspectRatio: '1 / 1', maxHeight: 480 }}>
@@ -189,22 +268,6 @@ export default function ProductDetailClient({ id }: Props) {
             )}
           </div>
 
-          {/* Stock status hint */}
-          {item.stock_status === 'available' && item.available_stock > 0 && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#059669', fontWeight: 500 }}>
-              ✓ In stock ({item.available_stock} units)
-            </p>
-          )}
-          {item.stock_status === 'limited' && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#B45309', fontWeight: 500 }}>
-              ⚠ Limited — only {item.available_stock} left
-            </p>
-          )}
-          {isOOS && (
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: '#64748B', fontWeight: 500 }}>
-              Currently out of stock
-            </p>
-          )}
         </div>
 
         {/* Product Details accordion */}
@@ -265,12 +328,13 @@ export default function ProductDetailClient({ id }: Props) {
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Floating CartBar — shows above bottom bar when cart has items */}
-      <CartBar bottom={88} />
+      {!searchOpen && <CartBar bottom={88} />}
 
-      {/* Sticky bottom bar */}
+      {/* Sticky bottom bar — hidden when search is open */}
+      {!searchOpen && <>
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, maxWidth: 768, margin: '0 auto', background: '#FFFFFF', borderTop: '1px solid #E5E7EB', padding: '12px 16px 24px', zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
         {/* Price in footer */}
         <div style={{ flex: 1 }}>
@@ -283,11 +347,7 @@ export default function ProductDetailClient({ id }: Props) {
         </div>
 
         {/* Add / Qty CTA — compact fixed width */}
-        {isOOS ? (
-          <button disabled style={{ width: 130, background: '#F3F4F6', color: '#9CA3AF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 13, fontWeight: 700 }}>
-            Out of Stock
-          </button>
-        ) : qty === 0 ? (
+        {qty === 0 ? (
           <button
             onClick={handleAdd}
             style={{ width: 130, background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '11px 0', fontSize: 14, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
@@ -306,7 +366,7 @@ export default function ProductDetailClient({ id }: Props) {
             </button>
           </div>
         )}
-      </div>
+      </div></>}
     </div>
   )
 }

@@ -7,10 +7,23 @@
 -- Enforces referential integrity for warehouse stock rows.
 -- IMPORTANT: run initial_sync { "entity": "locations" } before this migration
 -- so existing item_location rows are not orphaned.
-ALTER TABLE item_locations
-  ADD CONSTRAINT fk_item_locations_location
-  FOREIGN KEY (zoho_location_id) REFERENCES locations(zoho_location_id)
-  ON DELETE CASCADE;
+-- Wrapped in DO block: ALTER TABLE ... ADD CONSTRAINT has no IF NOT EXISTS
+-- guard in Postgres. This makes the migration safe to run on staging where
+-- the constraint may already exist from a prior direct SQL apply.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints
+    WHERE constraint_name = 'fk_item_locations_location'
+      AND table_name = 'item_locations'
+  ) THEN
+    ALTER TABLE item_locations
+      ADD CONSTRAINT fk_item_locations_location
+      FOREIGN KEY (zoho_location_id) REFERENCES locations(zoho_location_id)
+      ON DELETE CASCADE;
+  END IF;
+END
+$$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- NOT added (documented reasons):

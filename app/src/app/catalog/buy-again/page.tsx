@@ -2,9 +2,10 @@
 
 import React, { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, MapPin, ChevronDown, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
-import SearchBar from '@/components/catalog/SearchBar'
+import { User, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
+import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
 import ProductCard from '@/components/catalog/ProductCard'
+import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { useAuth } from '@/hooks/useAuth'
 import type { CatalogItem } from '@/types/catalog'
@@ -46,21 +47,21 @@ function SortButton({
 
 function groupByCategory(
   products: PurchasedProduct[],
+  categoryOrder: Map<string, number>,
 ): { category: string; items: PurchasedProduct[] }[] {
-  const map = new Map<string, { items: PurchasedProduct[]; lastPurchased: string }>()
+  const map = new Map<string, PurchasedProduct[]>()
   for (const p of products) {
     const cat = p.category_name ?? 'Other'
     const existing = map.get(cat)
     if (existing) {
-      existing.items.push(p)
-      if (p.last_purchased_at > existing.lastPurchased) existing.lastPurchased = p.last_purchased_at
+      existing.push(p)
     } else {
-      map.set(cat, { items: [p], lastPurchased: p.last_purchased_at })
+      map.set(cat, [p])
     }
   }
   return Array.from(map.entries())
-    .sort(([, a], [, b]) => b.lastPurchased.localeCompare(a.lastPurchased))
-    .map(([category, { items }]) => ({ category, items }))
+    .sort(([a], [b]) => (categoryOrder.get(a) ?? 999) - (categoryOrder.get(b) ?? 999))
+    .map(([category, items]) => ({ category, items }))
 }
 
 function applySortMode(products: PurchasedProduct[], mode: SortMode): PurchasedProduct[] {
@@ -76,7 +77,7 @@ function applySortMode(products: PurchasedProduct[], mode: SortMode): PurchasedP
 export default function BuyAgainPage() {
   const router = useRouter()
   const hidden = useScrollDirection()
-  const { user, isAuthenticated, loading: authLoading } = useAuth()
+  const { user, isAuthenticated } = useAuth()
 
   // Location area from wl cookie (same as CatalogClient)
   const [locationArea, setLocationArea] = useState<string | null>(null)
@@ -99,12 +100,26 @@ export default function BuyAgainPage() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => router.push('/auth/login'))
   }
 
+  // Category display_order lookup
+  const [categoryOrder, setCategoryOrder] = useState<Map<string, number>>(new Map())
+  useEffect(() => {
+    fetch('/api/categories')
+      .then(r => r.ok ? r.json() : { categories: [] })
+      .then((d: { categories: { category_name: string; display_order: number }[] }) => {
+        const m = new Map<string, number>()
+        for (const c of d.categories ?? []) m.set(c.category_name, c.display_order)
+        setCategoryOrder(m)
+      })
+      .catch(() => {})
+  }, [])
+
   // Buy-again data
   const [products, setProducts] = useState<PurchasedProduct[]>([])
   const [hasOrders, setHasOrders] = useState(false)
   const [unauthenticated, setUnauthenticated] = useState(false)
   const [dataLoading, setDataLoading] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Bestsellers (always shown in the empty/guest state)
   const [bestsellers, setBestsellers] = useState<CatalogItem[]>([])
@@ -138,41 +153,39 @@ export default function BuyAgainPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // ── Sticky catalog-style header ─────────────────────────────────────────────
+  // ── Derived search state ──────────────────────────────────────────────────────
+  const trimmedQuery = searchQuery.trim()
+  const displayBestsellers = trimmedQuery
+    ? bestsellers.filter(i =>
+        i.item_name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+        i.sku.toLowerCase().includes(trimmedQuery.toLowerCase())
+      )
+    : bestsellers
+  const displayProducts = trimmedQuery
+    ? products.filter(i =>
+        i.item_name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+        i.sku.toLowerCase().includes(trimmedQuery.toLowerCase())
+      )
+    : products
+
+  // ── Sticky catalog-style header (shared component) ──────────────────────────
   const header = (
     <header
       style={{
         position: 'fixed', top: 0, left: 0, right: 0,
         maxWidth: 768, margin: '0 auto',
-        background: '#FFFFFF', boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+        background: '#FFFFFF',
+        borderBottom: '1px solid #E5E7EB',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
         zIndex: 30,
       }}
     >
-      {/* Location row — collapses on scroll-down */}
-      <div style={{ overflow: 'hidden', maxHeight: hidden ? 0 : 60, transition: 'max-height 0.3s ease' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px 8px' }}>
-          <button
-            onClick={() => router.push('/location?from=catalog')}
-            style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', padding: 0, fontSize: 14, fontWeight: 500, color: '#1A1A2E' }}
-          >
-            <MapPin size={15} color="#0066CC" aria-hidden="true" />
-            <span>{locationArea ?? 'Set location'}</span>
-            <ChevronDown size={15} color="#6B7280" />
-          </button>
-
-          <button
-            onClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
-            aria-label={isAuthenticated ? `Hi, ${user?.contact_name}` : 'Login'}
-            style={{ width: 34, height: 34, borderRadius: '50%', background: '#E6F0FA', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <User size={18} color="#0066CC" />
-          </button>
-        </div>
-      </div>
-
-      {/* Search — always visible, navigates to catalog */}
-      <SearchBar
-        onSearch={(q) => { if (q) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
+      <CatalogPageHeader
+        hidden={hidden}
+        locationArea={locationArea}
+        contactName={isAuthenticated ? (user?.contact_name ?? null) : null}
+        onAvatarClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
+        onSearch={(q) => setSearchQuery(q)}
       />
     </header>
   )
@@ -184,13 +197,12 @@ export default function BuyAgainPage() {
     return (
       <div style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 140 }}>
         {header}
-        <div style={{ height: 100 }} aria-hidden="true" />
+        <div style={{ height: 104 }} aria-hidden="true" />
 
-        {/* Loading spinner */}
+        {/* Loading skeleton */}
         {dataLoading && (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 16px' }}>
-            <span style={{ width: 24, height: 24, border: '3px solid #059669', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+          <div style={{ paddingTop: 12 }}>
+            <LoadingSkeleton count={6} />
           </div>
         )}
 
@@ -217,17 +229,22 @@ export default function BuyAgainPage() {
         )}
 
         {/* Bestsellers grid */}
-        {!dataLoading && bestsellers.length > 0 && (
+        {!dataLoading && displayBestsellers.length > 0 && (
           <div style={{ padding: '20px 12px 0' }}>
             <p style={{ margin: '0 0 12px 4px', fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>
-              Bestsellers
+              {trimmedQuery ? 'Matching products' : 'Bestsellers'}
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {bestsellers.map((item) => (
+              {displayBestsellers.map((item) => (
                 <ProductCard key={item.zoho_item_id} item={item} />
               ))}
             </div>
           </div>
+        )}
+        {!dataLoading && trimmedQuery && displayBestsellers.length === 0 && (
+          <p style={{ padding: '32px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+            No matching products
+          </p>
         )}
 
         {/* Profile sheet */}
@@ -237,23 +254,25 @@ export default function BuyAgainPage() {
   }
 
   // ── Has orders — grouped by category with sort toggle ──────────────────────
-  const groups = groupByCategory(applySortMode(products, sortMode))
+  const groups = groupByCategory(applySortMode(displayProducts, sortMode), categoryOrder)
 
   return (
     <div style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 140 }}>
       {header}
-      <div style={{ height: 100 }} aria-hidden="true" />
+      <div style={{ height: 104 }} aria-hidden="true" />
 
       {/* Sort bar */}
-      <div style={{ padding: '12px 16px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <p style={{ margin: 0, fontSize: 13, color: '#9CA3AF' }}>
-          {products.length} product{products.length !== 1 ? 's' : ''}
-        </p>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <SortButton mode="recent" label="Recent" Icon={Clock} current={sortMode} onSelect={setSortMode} />
-          <SortButton mode="popular" label="Most Ordered" Icon={TrendingUp} current={sortMode} onSelect={setSortMode} />
-        </div>
+      <div style={{ padding: '20px 16px 4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}>
+        <SortButton mode="recent" label="Recent" Icon={Clock} current={sortMode} onSelect={setSortMode} />
+        <SortButton mode="popular" label="Most Ordered" Icon={TrendingUp} current={sortMode} onSelect={setSortMode} />
       </div>
+
+      {/* No results when searching */}
+      {trimmedQuery && groups.length === 0 && (
+        <p style={{ padding: '40px 16px', textAlign: 'center', fontSize: 14, color: '#9CA3AF' }}>
+          No matching products
+        </p>
+      )}
 
       {/* Category groups */}
       <div style={{ marginTop: 8 }}>

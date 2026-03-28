@@ -15,6 +15,20 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
+import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
+
+const logger = makeLogger('[contacts-webhook]')
+
+// Fields watched for delta logging.
+// These are the fields most likely to change and most impactful operationally.
+// phone is included explicitly — a phone change is a critical event since it's
+// the unique key used to authenticate integrators.
+const WATCHED_FIELDS = [
+  'status', 'contact_name', 'company_name',
+  'pricebook_id', 'phone', 'email',
+  'payment_terms', 'payment_terms_label',
+  'currency_code', 'contact_type',
+]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,7 +50,6 @@ interface ZohoContactPayload {
   contact_type?: string
   status?: string
   primary_contact_person_id?: string
-  // Zoho uses either price_list_id or pricebook_id depending on the API version
   price_list_id?: string
   pricebook_id?: string
   mobile?: string
@@ -54,26 +67,17 @@ interface ZohoContactPayload {
   last_modified_time?: string
 }
 
-// Zoho sends either "contact_created"/"contact_updated"/"contact_deleted" (snake_case)
-// or "Create"/"Update"/"Delete" depending on webhook version — handle both.
 interface ZohoWebhookPayload {
-  event_type?: string    // "contact_created" | "contact_updated" | "contact_deleted"
-  webhook_event?: string // "Create" | "Update" | "Delete" (older format)
+  event_type?: string
+  webhook_event?: string
   data?: ZohoContactPayload | Record<string, unknown>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Normalise Zoho's event_type to one of: 'created' | 'updated' | 'deleted' | null.
- * Zoho may send: "contact_created", "contact.created", "Create", "Update", "Delete", etc.
- * Uses an exact allow-list rather than substring match to avoid misrouting future
- * Zoho event types (e.g., "contact_reactivated" would otherwise match 'created').
- */
 function normaliseEventType(raw: string | undefined): 'created' | 'updated' | 'deleted' | null {
   if (!raw) return null
   const lower = raw.toLowerCase().replace(/[^a-z]/g, '_')
-  // 'upsert' is our own query param convention for Zoho's create/update webhook
   const CREATED = new Set(['contact_created', 'create', 'created'])
   const UPDATED = new Set(['contact_updated', 'update', 'updated', 'upsert'])
   const DELETED = new Set(['contact_deleted', 'delete', 'deleted'])
@@ -83,15 +87,9 @@ function normaliseEventType(raw: string | undefined): 'created' | 'updated' | 'd
   return null
 }
 
-/** Log a processing failure to webhook_errors. Never throws. */
 async function logError(
   supabase: SupabaseClient,
-  opts: {
-    event_type: string
-    zoho_entity_id?: string
-    error_message: string
-    payload: unknown
-  }
+  opts: { event_type: string; zoho_entity_id?: string; error_message: string; payload: unknown }
 ): Promise<void> {
   try {
     await supabase.from('webhook_errors').insert({
@@ -102,7 +100,7 @@ async function logError(
       payload: opts.payload,
     })
   } catch (e) {
-    console.error('[contacts-webhook] Failed to log webhook error:', e)
+    logger.error('LOG_ERR', { msg: 'Failed to write to webhook_errors', err: String(e) })
   }
 }
 
@@ -118,23 +116,29 @@ async function handleUpsert(
   if (!contactId) throw new Error('Missing contact_id in payload')
   if (!contact.contact_name) throw new Error('Missing contact_name in payload')
 
-  // ── 1. Resolve phone ────────────────────────────────────────────────────────
-  // contacts.phone is UNIQUE — it's the key used to look up integrators at login.
-  // extractPhoneFromContact cascades through mobile → phone → billing_address.phone
-  // → contact_persons in priority order.
+  // ── 1. Phone extraction — log source for debugging ─────────────────────────
+  // contacts.phone is UNIQUE and is the key used to look up integrators at login.
+  // extractPhoneFromContact cascades through mobile → phone → billing_address →
+  // contact_persons. We log which source the phone came from to aid debugging.
   const phoneResult = extractPhoneFromContact(contact)
   if (!phoneResult) {
-    throw new Error(`No valid Indian phone found for contact "${contact.contact_name}" (${contactId}) — ${describeContactPhones(contact)}`)
+    const phoneSummary = describeContactPhones(contact)
+    logger.warn('PHONE_FAIL', {
+      contact_id: contactId,
+      contact_name: contact.contact_name,
+      reason: 'no valid Indian phone found',
+      phone_summary: phoneSummary,
+    })
+    throw new Error(`No valid Indian phone found for contact "${contact.contact_name}" (${contactId}) — ${phoneSummary}`)
   }
-  const { phone } = phoneResult
+  const { phone, source } = phoneResult
+  logger.info('PHONE', { contact_id: contactId, phone, source })
 
-  // ── 2. Map pricebook ID ─────────────────────────────────────────────────────
-  // Older Zoho API sends price_list_id; newer sends pricebook_id. Accept either.
+  // ── 2. Resolve pricebook ID ─────────────────────────────────────────────────
   const pricebookId = contact.pricebook_id || contact.price_list_id || null
+  logger.info('PRICEBOOK', { contact_id: contactId, pricebook_id: pricebookId ?? 'none' })
 
-  // ── 3. Upsert the contact row ───────────────────────────────────────────────
-  // Field mapping mirrors sync-contacts/index.ts for consistency between the
-  // real-time and batch sync paths.
+  // ── 3. Build contact row ───────────────────────────────────────────────────
   const contactRow = {
     zoho_contact_id:           contactId,
     contact_name:              contact.contact_name,
@@ -157,11 +161,45 @@ async function handleUpsert(
     updated_at:                new Date().toISOString(),
   }
 
+  // ── 4. Delta: fetch existing record and log what changed ───────────────────
+  // This is the primary diagnostic for "contact update not reflecting" issues.
+  // If DELTA shows changed=0 for an expected update, Zoho sent stale or identical
+  // data. If DELTA shows changes but UPSERT_FAIL follows, there's a DB constraint
+  // issue (most likely a duplicate phone collision on another contact row).
+  const { data: existing } = await supabase
+    .from('contacts')
+    .select(WATCHED_FIELDS.join(','))
+    .eq('zoho_contact_id', contactId)
+    .maybeSingle()
+
+  const { op, changed, changedCount } = computeDelta(
+    existing as Record<string, unknown> | null,
+    contactRow as unknown as Record<string, unknown>,
+    WATCHED_FIELDS
+  )
+  if (op === 'insert') {
+    logger.info('DELTA', { contact_id: contactId, op: 'insert', contact_name: contact.contact_name })
+  } else if (changedCount === 0) {
+    logger.info('DELTA', { contact_id: contactId, op: 'update', changed: 0, note: 'no watched fields changed — Zoho may have sent unchanged data' })
+  } else {
+    logger.info('DELTA', { contact_id: contactId, op: 'update', changed: changedCount, ...changed })
+  }
+
+  // ── 5. Upsert the contact row ──────────────────────────────────────────────
   const { error: contactErr } = await supabase
     .from('contacts')
     .upsert(contactRow, { onConflict: 'zoho_contact_id' })
 
   if (contactErr) {
+    // The most common failure here is a duplicate phone on another contact row.
+    // Log the phone to help identify which existing contact collides.
+    logger.error('UPSERT_FAIL', {
+      contact_id: contactId,
+      event: eventType,
+      phone,
+      err: contactErr.message,
+      hint: 'check for duplicate phone on another contacts row',
+    })
     await logError(supabase, {
       event_type: eventType,
       zoho_entity_id: contactId,
@@ -171,23 +209,23 @@ async function handleUpsert(
     throw contactErr
   }
 
-  // ── 4. Sync contact persons ─────────────────────────────────────────────────
-  // Strategy:
-  //   a) UPSERT all persons present in the payload (zoho_contact_person_id is PK)
-  //   b) Persons previously in Zoho but absent from this payload → status='inactive'
-  //      (soft-delete preserves audit history; never hard-delete)
-  //
-  // If the payload omits the contact_persons array entirely (some Zoho partial-
-  // field updates do this), skip both steps to avoid incorrectly deactivating
-  // existing persons.
+  logger.info('UPSERT_OK', { contact_id: contactId, op, phone, pricebook_id: pricebookId ?? 'none' })
+
+  // ── 6. Sync contact persons ─────────────────────────────────────────────────
+  // If payload omits contact_persons entirely (Zoho partial updates), skip both
+  // upsert and deactivation to avoid incorrectly removing existing persons.
   const persons: ZohoContactPerson[] = contact.contact_persons ?? []
   const personsArrayPresent = Array.isArray(contact.contact_persons)
 
-  if (personsArrayPresent) {
+  if (!personsArrayPresent) {
+    logger.info('PERSONS', { contact_id: contactId, note: 'contact_persons absent from payload — skipping persons sync' })
+  } else {
     const validPersons = persons.filter((p) => p.contact_person_id)
     const incomingIds  = validPersons.map((p) => p.contact_person_id)
 
-    // ── a) UPSERT active persons from payload ────────────────────────────────
+    logger.info('PERSONS', { contact_id: contactId, incoming: validPersons.length, ids: incomingIds })
+
+    // ── a) UPSERT active persons from payload ──────────────────────────────
     if (validPersons.length > 0) {
       const personRows = validPersons.map((p) => ({
         zoho_contact_person_id:   p.contact_person_id,
@@ -198,7 +236,6 @@ async function handleUpsert(
         phone:                    normalizeIndianPhone(p.phone),
         mobile:                   normalizeIndianPhone(p.mobile),
         is_primary:               p.is_primary_contact ?? false,
-        // communication_preference may be a string or JSON object in Zoho
         communication_preference: p.communication_preference ?? null,
         status:                   'active',
         updated_at:               new Date().toISOString(),
@@ -209,25 +246,24 @@ async function handleUpsert(
         .upsert(personRows, { onConflict: 'zoho_contact_person_id' })
 
       if (upsertErr) {
-        // Non-fatal: contact row is already saved; log but don't fail the request
-        console.warn(`[contacts-webhook] contact_persons upsert warning (${contactId}):`, upsertErr.message)
+        logger.warn('PERSONS_UPSERT_WARN', { contact_id: contactId, count: validPersons.length, err: upsertErr.message })
         await logError(supabase, {
           event_type: eventType,
           zoho_entity_id: contactId,
           error_message: `contact_persons upsert failed: ${upsertErr.message}`,
           payload: rawPayload,
         })
+      } else {
+        logger.info('PERSONS_UPSERT_OK', { contact_id: contactId, upserted: validPersons.length })
       }
     }
 
-    // ── b) Soft-delete persons no longer in the payload ──────────────────────
-    // Build the NOT IN filter only when there are incoming IDs; if the payload
-    // has an empty array every existing person should be deactivated.
+    // ── b) Soft-deactivate persons no longer in payload ────────────────────
     let deactivateQuery = supabase
       .from('contact_persons')
       .update({ status: 'inactive', updated_at: new Date().toISOString() })
       .eq('zoho_contact_id', contactId)
-      .eq('status', 'active') // skip already-inactive rows
+      .eq('status', 'active')
 
     if (incomingIds.length > 0) {
       deactivateQuery = deactivateQuery.not(
@@ -235,15 +271,24 @@ async function handleUpsert(
       )
     }
 
-    const { error: deactivateErr } = await deactivateQuery
+    const { error: deactivateErr, count: deactivatedCount } = await deactivateQuery
     if (deactivateErr) {
-      console.warn(`[contacts-webhook] contact_persons deactivate warning (${contactId}):`, deactivateErr.message)
+      logger.warn('PERSONS_DEACTIVATE_WARN', { contact_id: contactId, err: deactivateErr.message })
+    } else {
+      logger.info('PERSONS_DEACTIVATE_OK', { contact_id: contactId, deactivated: deactivatedCount ?? 0 })
     }
   }
 
-  console.log(
-    `[contacts-webhook] ${eventType} OK — contact_id=${contactId}, persons_upserted=${persons.filter(p => p.contact_person_id).length}, pricebook=${pricebookId ?? 'none'}`
-  )
+  logger.info('DONE', {
+    contact_id: contactId,
+    event: eventType,
+    op,
+    changed: changedCount,
+    persons: persons.filter(p => p.contact_person_id).length,
+    pricebook_id: pricebookId ?? 'none',
+  })
+
+  return { op, changed, changedCount }
 }
 
 // ── Delete handler (soft-delete) ─────────────────────────────────────────────
@@ -256,15 +301,15 @@ async function handleDelete(
   const contactId = contact.contact_id
   if (!contactId) throw new Error('Missing contact_id in delete payload')
 
-  // Soft-delete: mark contact inactive rather than hard-deleting.
-  // Preserves order history, audit trail, and referential integrity with
-  // estimates/sales_orders that reference this contact.
+  logger.info('DELETE', { contact_id: contactId, note: 'soft-deleting contact + persons' })
+
   const { error: contactErr } = await supabase
     .from('contacts')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_contact_id', contactId)
 
   if (contactErr) {
+    logger.error('DELETE_FAIL', { contact_id: contactId, err: contactErr.message })
     await logError(supabase, {
       event_type: 'deleted',
       zoho_entity_id: contactId,
@@ -274,40 +319,39 @@ async function handleDelete(
     throw contactErr
   }
 
-  // Also deactivate all contact persons — they're meaningless without an active contact.
   const { error: personsErr } = await supabase
     .from('contact_persons')
     .update({ status: 'inactive', updated_at: new Date().toISOString() })
     .eq('zoho_contact_id', contactId)
 
   if (personsErr) {
-    // Non-fatal: contact is already deactivated; log and continue.
-    console.warn(`[contacts-webhook] contact_persons deactivate-on-delete warning (${contactId}):`, personsErr.message)
+    logger.warn('PERSONS_DEACTIVATE_WARN', { contact_id: contactId, err: personsErr.message })
   }
 
-  console.log(`[contacts-webhook] soft-deleted OK — contact_id=${contactId}`)
+  logger.info('DONE', { contact_id: contactId, event: 'deleted', op: 'soft-delete' })
+  return { op: 'soft-delete' as const, changed: {}, changedCount: 0 }
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
+  const t0 = Date.now()
+
   // ── Auth ───────────────────────────────────────────────────────────────────
   const expectedToken = Deno.env.get('ZOHO_WEBHOOK_TOKEN_CONTACTS')
   if (!expectedToken) {
-    // Misconfigured deployment — log clearly so ops can diagnose, still reject
-    console.error('[contacts-webhook] ZOHO_WEBHOOK_TOKEN_CONTACTS env var is not set')
+    logger.error('AUTH_FAIL', { reason: 'ZOHO_WEBHOOK_TOKEN_CONTACTS env var not set' })
     return new Response('Unauthorized', { status: 401 })
   }
 
   const receivedToken = req.headers.get('x-zoho-webhook-token')
   if (!receivedToken) {
-    console.warn('[contacts-webhook] 401 — x-zoho-webhook-token header is MISSING from request. Zoho custom header not configured.')
+    logger.warn('AUTH_FAIL', { reason: 'x-zoho-webhook-token header missing' })
     return new Response('Unauthorized', { status: 401 })
   }
   if (receivedToken !== expectedToken) {
-    // Log first/last 4 chars of received token to diagnose mismatch without exposing full secret
     const masked = `${receivedToken.slice(0, 4)}...${receivedToken.slice(-4)}`
-    console.warn(`[contacts-webhook] 401 — token MISMATCH. Received: "${masked}" (len=${receivedToken.length}), Expected len=${expectedToken.length}`)
+    logger.warn('AUTH_FAIL', { reason: 'token mismatch', received_masked: masked, expected_len: expectedToken.length })
     return new Response('Unauthorized', { status: 401 })
   }
 
@@ -316,15 +360,10 @@ serve(async (req: Request) => {
   try {
     rawPayload = await req.json()
   } catch {
-    console.error('[contacts-webhook] Failed to parse JSON body')
-    // Malformed body — return 200 anyway (Zoho should not retry parse failures)
+    logger.error('PARSE_FAIL', { reason: 'invalid JSON body' })
     return new Response('OK', { status: 200 })
   }
 
-  // Resolve event type: check JSON body first, then fall back to URL query param.
-  // Zoho Books sends the raw entity object as the body — it does NOT embed event_type
-  // in the JSON. The 'action' query param is configured by us in Zoho's webhook URL
-  // (e.g. ?action=upsert or ?action=delete) to signal the event type.
   const url = new URL(req.url)
   const rawEventType = rawPayload.event_type
     ?? rawPayload.webhook_event
@@ -332,28 +371,30 @@ serve(async (req: Request) => {
     ?? undefined
   const eventType = normaliseEventType(rawEventType)
 
+  logger.info('RECV', { event_raw: rawEventType ?? '(none)', event: eventType ?? 'unknown', url: url.pathname + url.search })
+
   if (!eventType) {
-    console.error(`[contacts-webhook] Unknown event_type: "${rawEventType}" — add ?action=upsert or ?action=delete to the Zoho webhook URL`)
+    logger.error('PARSE_FAIL', { reason: `unknown event_type "${rawEventType}"`, hint: 'add ?action=upsert or ?action=delete to the Zoho webhook URL' })
     return new Response('OK', { status: 200 })
   }
 
-  // Zoho Books wraps the entity under a module-named key in the webhook body,
-  // mirroring their REST API shape: { "contact": { "contact_id": "...", ... } }.
-  // Fall back chain: rawPayload.contact → rawPayload.data → rawPayload (top-level).
   const raw = rawPayload as Record<string, unknown>
-  const contact = (
-    raw['contact'] ?? raw['data'] ?? rawPayload
-  ) as ZohoContactPayload | undefined
+  const contact = (raw['contact'] ?? raw['data'] ?? rawPayload) as ZohoContactPayload | undefined
   if (!contact?.contact_id) {
-    console.error('[contacts-webhook] Cannot extract contact_id from payload:', JSON.stringify(rawPayload))
+    logger.error('PARSE_FAIL', { reason: 'cannot extract contact_id', payload_keys: Object.keys(raw) })
     return new Response('OK', { status: 200 })
   }
 
-  console.log(`[contacts-webhook] Received event="${eventType}" contact_id="${contact.contact_id}"`)
+  logger.info('PARSE', {
+    contact_id: contact.contact_id,
+    event: eventType,
+    contact_name: contact.contact_name,
+    has_persons: Array.isArray(contact.contact_persons),
+    persons_count: contact.contact_persons?.length ?? 'absent',
+    last_modified: contact.last_modified_time ?? 'absent',
+  })
 
   // ── Process ────────────────────────────────────────────────────────────────
-  // Create a fresh client per request — Edge Functions are stateless and
-  // reusing a module-level singleton risks cross-request token contamination.
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -361,15 +402,35 @@ serve(async (req: Request) => {
   )
 
   try {
-    if (eventType === 'deleted') {
-      await handleDelete(supabase, contact, rawPayload)
-    } else {
-      // 'created' or 'updated' — same upsert path
-      await handleUpsert(supabase, contact, eventType, rawPayload)
-    }
+    const result = eventType === 'deleted'
+      ? await handleDelete(supabase, contact, rawPayload)
+      : await handleUpsert(supabase, contact, eventType, rawPayload)
+
+    await logEvent({
+      supabase,
+      webhook_type:   'contacts',
+      event_type:     eventType,
+      zoho_entity_id: contact.contact_id,
+      op:             result.op,
+      changed_count:  result.changedCount,
+      changed_fields: result.changed,
+      status:         'success',
+      duration_ms:    logger.elapsed(t0),
+    })
   } catch (err) {
-    // Error already logged inside handlers; return 200 to stop Zoho retries.
-    console.error(`[contacts-webhook] Processing error (${eventType}):`, err)
+    const duration_ms = logger.elapsed(t0)
+    logger.error('HANDLER_FAIL', { contact_id: contact.contact_id, event: eventType, err: String(err), duration_ms })
+    await logEvent({
+      supabase,
+      webhook_type:   'contacts',
+      event_type:     eventType,
+      zoho_entity_id: contact.contact_id,
+      op:             null,
+      changed_count:  null,
+      changed_fields: null,
+      status:         'error',
+      duration_ms,
+    })
   }
 
   return new Response('OK', { status: 200 })

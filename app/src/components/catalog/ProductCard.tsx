@@ -3,7 +3,7 @@
 import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Minus, Bell } from 'lucide-react'
+import { Plus, Minus } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 
@@ -28,7 +28,6 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
 
   const cartEntry = items.find((i) => i.zoho_item_id === item.zoho_item_id)
   const qty = cartEntry?.quantity ?? 0
-  const isOOS = item.stock_status === 'out_of_stock'
   const imgSrc = !imgError && item.image_url
     ? item.image_url
     : item.category_icon_url ?? PLACEHOLDER
@@ -36,7 +35,7 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
 
   function handleAdd(e: React.MouseEvent) {
     e.stopPropagation()
-    if (guestMode || isOOS) return
+    if (guestMode) return
     addItem({
       zoho_item_id: item.zoho_item_id,
       item_name: item.item_name,
@@ -47,11 +46,6 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
       line_total: item.final_price,
       image_url: item.image_url ?? item.category_icon_url,
     })
-  }
-
-  function handleNotify(e: React.MouseEvent) {
-    e.stopPropagation()
-    alert(`We'll notify you when ${item.item_name} is back in stock!`)
   }
 
   function handleQtyChange(e: React.MouseEvent, newQty: number) {
@@ -95,47 +89,10 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
           unoptimized={!item.image_url || imgError}
         />
 
-        {/* OOS-only badge — auto-width, centered over thumbnail */}
-        {isOOS && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: '#64748B',
-              color: '#FFFFFF',
-              fontSize: 11,
-              fontWeight: 600,
-              padding: '4px 10px',
-              borderRadius: '0 0 6px 6px',
-              letterSpacing: '0.03em',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            Out of Stock
-          </div>
-        )}
-
         {/* Cart controls — bottom-right inside image */}
         {!guestMode && (
           <>
-            {isOOS ? (
-              <button
-                onClick={handleNotify}
-                aria-label="Notify when available"
-                style={{
-                  position: 'absolute', bottom: 8, right: 8,
-                  width: 32, height: 32,
-                  border: 'none', borderRadius: 6,
-                  background: '#B45309', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 2px 6px rgba(180,83,9,0.4)',
-                }}
-              >
-                <Bell size={15} color="#FFFFFF" />
-              </button>
-            ) : qty === 0 ? (
+            {qty === 0 ? (
               <button
                 onClick={handleAdd}
                 aria-label="Add to cart"
@@ -183,11 +140,9 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
         }}>
           {item.item_name}
         </p>
-        {item.brand && (
-          <p style={{ margin: '0 0 4px', fontSize: 12, color: '#9CA3AF', lineHeight: 1.2 }}>
-            {item.brand}
-          </p>
-        )}
+        <p style={{ margin: '0 0 4px', fontSize: 11, color: '#9CA3AF', lineHeight: 1.2 }}>
+          {item.sku}
+        </p>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>{fmt(item.final_price)}</span>
           {hasDiscount && (
