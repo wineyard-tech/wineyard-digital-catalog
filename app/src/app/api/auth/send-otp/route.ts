@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
   // ── Check contacts table ──────────────────────────────────────────────────
   const { data: contact } = await supabase
     .from('contacts')
-    .select('zoho_contact_id, contact_name, company_name, status')
+    .select('zoho_contact_id, contact_name, company_name, status, online_catalogue_access')
     .eq('phone', phone)
     .maybeSingle()
 
@@ -77,6 +77,20 @@ export async function POST(request: NextRequest) {
     sendUnregisteredAlert(phone, now) // intentionally not awaited
     return NextResponse.json(
       { success: true, registered: false, message: 'Please contact WineYard to register.' },
+      { status: 200 },
+    )
+  }
+
+  if (!contact.online_catalogue_access) {
+    // Registered and active but not granted catalog access — no OTP sent
+    await supabase.from('auth_attempts').insert({
+      phone,
+      attempt_type: 'registered_no_access',
+      ip_address: ip,
+      user_agent: userAgent,
+    })
+    return NextResponse.json(
+      { success: true, registered: true, catalogAccess: false },
       { status: 200 },
     )
   }
@@ -121,7 +135,7 @@ export async function POST(request: NextRequest) {
   })
 
   return NextResponse.json(
-    { success: true, registered: true, expiresIn: OTP_EXPIRY_MINUTES * 60 },
+    { success: true, registered: true, catalogAccess: true, expiresIn: OTP_EXPIRY_MINUTES * 60 },
     { status: 200 },
   )
 }
