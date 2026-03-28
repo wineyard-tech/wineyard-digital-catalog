@@ -707,7 +707,7 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
   // ── 1. Upsert pricebook metadata ────────────────────────────────────────────
   const catalogRows = zohoBooks.map((pb: any) => ({
     zoho_pricebook_id: pb.pricebook_id,
-    pricebook_name:    pb.pricebook_name,
+    pricebook_name:    pb.pricebook_name || pb.name || `Pricebook ${pb.pricebook_id}`,
     currency_id:       pb.currency_id || 'INR',
     is_active:         (pb.status ?? 'active') === 'active',
     synced_at:         new Date().toISOString(),
@@ -725,16 +725,18 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
   let itemsUpserted = 0
 
   for (const pb of zohoBooks) {
+    const pbName = pb.pricebook_name ?? pb.name ?? pb.pricebook_id
+
     const detail = await zohoGet(`/pricebooks/${pb.pricebook_id}`, token, ORG_ID)
     if (detail.code !== 0) {
-      console.warn(`[pricebooks] detail fetch failed for ${pb.pricebook_id} (${pb.pricebook_name}): ${detail.message}`)
+      console.warn(`[pricebooks] detail fetch failed for ${pbName}: ${detail.message}`)
       continue
     }
 
-    // Zoho returns items under 'priceitems' on the detail endpoint
-    const priceItems: any[] = detail.pricebook?.priceitems ?? detail.pricebook?.items ?? []
+    // Zoho returns all items in a single response under 'pricebook_items'
+    const priceItems: any[] = detail.pricebook?.pricebook_items ?? []
     if (priceItems.length === 0) {
-      console.log(`[pricebooks] ${pb.pricebook_name}: no items — skipping`)
+      console.log(`[pricebooks] ${pbName}: no items — skipping`)
       continue
     }
 
@@ -742,23 +744,33 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
       .map((pi: any) => ({
         zoho_pricebook_id: pb.pricebook_id,
         zoho_item_id:      pi.item_id,
-        // Zoho returns custom price as 'pricebook_rate'; fall back to 'rate'
-        custom_rate:       dec(pi.pricebook_rate ?? pi.rate),
+        custom_rate:       dec(pi.pricebook_rate ?? pi.rate) ?? 0,
         updated_at:        new Date().toISOString(),
       }))
-      .filter((r: any) => r.zoho_item_id && r.custom_rate !== null)
+      .filter((r: any) => r.zoho_item_id)
 
     if (itemRows.length === 0) continue
 
-    const { error: itemErr } = await supabase
+    // Try batch upsert first; fall back to row-by-row to isolate FK failures
+    const { error: batchErr } = await supabase
       .from('pricebook_items')
       .upsert(itemRows, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
 
-    if (itemErr) {
-      console.warn(`[pricebooks] items upsert failed for ${pb.pricebook_name}: ${itemErr.message}`)
+    if (batchErr) {
+      console.warn(`[pricebooks] batch upsert failed for ${pbName}: ${batchErr.message} — retrying row-by-row`)
+      for (const row of itemRows) {
+        const { error: rowErr } = await supabase
+          .from('pricebook_items')
+          .upsert(row, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
+        if (rowErr) {
+          console.warn(`[pricebooks] row failed ${pbName}/${row.zoho_item_id}: ${rowErr.message}`)
+        } else {
+          itemsUpserted++
+        }
+      }
     } else {
       itemsUpserted += itemRows.length
-      console.log(`[pricebooks] ${pb.pricebook_name}: ${itemRows.length} item prices upserted`)
+      console.log(`[pricebooks] ${pbName}: ${itemRows.length} item prices upserted`)
     }
   }
 
