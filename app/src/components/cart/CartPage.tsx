@@ -80,7 +80,7 @@ export default function CartPage() {
   }
 
   const gst = Math.round(subtotal * GST_RATE)
-  const total = subtotal + gst
+  const total = subtotal  // tax shown as a line item; "To Pay" = subtotal (pre-tax)
   const itemCount = items.reduce((s, i) => s + i.quantity, 0)
 
   // ── Check auth state on mount ─────────────────────────────────────────────
@@ -377,7 +377,7 @@ export default function CartPage() {
             </p>
             <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
               {hasLocation
-                ? (warehouseName ? `From ${warehouseName}` : 'From nearest WineYard warehouse')
+                ? (warehouseName ? `From ${warehouseName}` : 'From nearest Wine Yard warehouse')
                 : 'Required before getting a quote — tap to set'}
             </p>
           </div>
@@ -474,14 +474,14 @@ export default function CartPage() {
               Register to Get Quotes
             </h3>
             <p style={{ margin: '0 0 24px', fontSize: 14, color: '#6B7280', lineHeight: 1.5 }}>
-              You need to be registered with WineYard Technologies to request quotes or place orders. Contact us to get set up.
+              You need to be registered with Wine Yard Technologies to request quotes or place orders. Contact us to get set up.
             </p>
             <button
               onClick={openAdminWhatsApp}
               style={{ width: '100%', background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '14px 0', fontSize: 15, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12 }}
             >
               <MessageCircle size={18} />
-              Contact WineYard
+              Contact Wine Yard
             </button>
             <button
               onClick={() => setShowRegModal(false)}

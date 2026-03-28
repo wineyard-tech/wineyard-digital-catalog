@@ -1,47 +1,51 @@
 'use client'
 
-import { Lock, MessageCircle } from 'lucide-react'
+import { ShieldAlert, MessageCircle } from 'lucide-react'
 
-interface UnregisteredMessageProps {
+interface CatalogAccessBlockedMessageProps {
   phoneNumber: string
   onBrowseCatalog: () => void
   onTryAgain: () => void
 }
 
-export default function UnregisteredMessage({
+export default function CatalogAccessBlockedMessage({
   phoneNumber,
   onBrowseCatalog,
   onTryAgain,
-}: UnregisteredMessageProps) {
-  const wabaLink = process.env.NEXT_PUBLIC_WABA_LINK ?? 'https://wa.me/91'
+}: CatalogAccessBlockedMessageProps) {
+  const adminLink =
+    process.env.NEXT_PUBLIC_WHATSAPP_ADMIN ??
+    process.env.NEXT_PUBLIC_WABA_LINK ??
+    'https://wa.me/91'
+
   const displayPhone = phoneNumber
     .replace('+91', '+91 ')
     .replace(/(\d{5})(\d{5})$/, '$1 $2')
 
   return (
     <div className="w-full text-center">
-      <div className="w-14 h-14 bg-[#FEF2F2] rounded-full flex items-center justify-center mx-auto mb-3">
-        <Lock className="w-6 h-6 text-[#DC2626]" />
+      <div className="w-14 h-14 bg-[#FFFBEB] rounded-full flex items-center justify-center mx-auto mb-3">
+        <ShieldAlert className="w-6 h-6 text-[#D97706]" />
       </div>
       <h2 className="text-base font-bold text-[#0F172A] mb-1">
-        Number Not Registered
+        Catalog Access Not Enabled
       </h2>
       <p className="text-sm text-[#64748B] mb-1">
-        <span className="font-semibold text-[#0F172A]">{displayPhone}</span> is not
-        registered with Wine Yard.
+        <span className="font-semibold text-[#0F172A]">{displayPhone}</span> is registered
+        but hasn&apos;t been granted catalog access.
       </p>
       <p className="text-sm text-[#64748B] mb-6">
-        Contact us on WhatsApp to get access and personalised pricing.
+        Contact us on WhatsApp to activate your digital catalog access.
       </p>
 
       <a
-        href={wabaLink}
+        href={adminLink}
         target="_blank"
         rel="noopener noreferrer"
         className="flex items-center justify-center gap-2 w-full h-12 bg-[#25D366] text-white rounded-xl text-sm font-bold mb-3 no-underline active:bg-[#1EBE5A]"
       >
         <MessageCircle className="w-4 h-4" />
-        Contact on WhatsApp
+        Request Access on WhatsApp
       </a>
 
       <button

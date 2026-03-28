@@ -28,6 +28,7 @@ const WATCHED_FIELDS = [
   'pricebook_id', 'phone', 'email',
   'payment_terms', 'payment_terms_label',
   'currency_code', 'contact_type',
+  'online_catalogue_access',
 ]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ interface ZohoContactPayload {
   payment_terms_label?: string
   currency_id?: string
   currency_code?: string
-  custom_fields?: Record<string, unknown>
+  custom_fields?: Array<{ api_name?: string; value?: unknown; [key: string]: unknown }>
   contact_persons?: ZohoContactPerson[]
   created_time?: string
   last_modified_time?: string
@@ -139,6 +140,13 @@ async function handleUpsert(
   logger.info('PRICEBOOK', { contact_id: contactId, pricebook_id: pricebookId ?? 'none' })
 
   // ── 3. Build contact row ───────────────────────────────────────────────────
+  // Extract cf_online_catalogue_access from Zoho custom_fields array
+  const cfFields: Array<{ api_name?: string; value?: unknown }> =
+    Array.isArray(contact.custom_fields) ? contact.custom_fields : []
+  const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
+  const online_catalogue_access =
+    cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
+
   const contactRow = {
     zoho_contact_id:           contactId,
     contact_name:              contact.contact_name,
@@ -155,7 +163,8 @@ async function handleUpsert(
     payment_terms_label:       contact.payment_terms_label || null,
     currency_id:               contact.currency_id || null,
     currency_code:             contact.currency_code || 'INR',
-    custom_fields:             contact.custom_fields ?? {},
+    custom_fields:             contact.custom_fields ?? [],
+    online_catalogue_access,
     created_time:              contact.created_time || null,
     last_modified_time:        contact.last_modified_time || null,
     updated_at:                new Date().toISOString(),

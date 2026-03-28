@@ -4,13 +4,13 @@ import { CartProvider } from '../components/cart/CartContext'
 import { PricingProvider } from '../contexts/PricingContext'
 
 export const metadata: Metadata = {
-  title: 'WineYard Catalog',
-  description: 'WineYard CCTV product catalog for integrators',
+  title: 'Wine Yard Catalog',
+  description: 'Wine Yard CCTV product catalog for integrators',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'WineYard',
+    title: 'Wine Yard',
   },
 }
 

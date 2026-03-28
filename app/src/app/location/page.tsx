@@ -217,7 +217,7 @@ export default function LocationPage() {
           Where should we deliver?
         </h1>
         <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
-          We&apos;ll show stock from your nearest WineYard warehouse
+          We&apos;ll show stock from your nearest Wine Yard warehouse
         </p>
       </div>
 

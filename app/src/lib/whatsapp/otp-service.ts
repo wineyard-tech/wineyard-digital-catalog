@@ -97,7 +97,7 @@ export async function sendOTP(
       text: {
         preview_url: false,
         body:
-          `Your WineYard login OTP is *${otpCode}*. ` +
+          `Your Wine Yard login OTP is *${otpCode}*. ` +
           `Valid for ${expiryMins} minutes. Do not share this code with anyone.`,
       },
     })

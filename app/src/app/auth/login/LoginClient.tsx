@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Camera } from 'lucide-react'
+import Image from 'next/image'
 import PhoneInput from '@/components/auth/PhoneInput'
 import UnregisteredMessage from '@/components/auth/UnregisteredMessage'
+import CatalogAccessBlockedMessage from '@/components/auth/CatalogAccessBlockedMessage'
 
-type Step = 'phone' | 'unregistered'
+type Step = 'phone' | 'unregistered' | 'no_access'
 
 export default function LoginClient() {
   const router = useRouter()
@@ -33,6 +34,7 @@ export default function LoginClient() {
       const data = (await res.json()) as {
         success: boolean
         registered: boolean
+        catalogAccess?: boolean
         error?: string
       }
 
@@ -42,8 +44,10 @@ export default function LoginClient() {
       }
 
       setPhone(phoneNumber)
-      if (data.registered) {
+      if (data.registered && data.catalogAccess) {
         router.push(`/auth/verify?phone=${encodeURIComponent(phoneNumber)}`)
+      } else if (data.registered && !data.catalogAccess) {
+        setStep('no_access')
       } else {
         setStep('unregistered')
       }
@@ -58,13 +62,20 @@ export default function LoginClient() {
     <main className="min-h-screen bg-[#F8FAFB] flex flex-col items-center justify-center px-4 py-8">
       {/* Brand header */}
       <div className="flex flex-col items-center mb-8">
-        <div className="w-14 h-14 bg-[#0066CC] rounded-2xl flex items-center justify-center mb-3 shadow-[0_4px_12px_rgba(0,102,204,0.3)]">
-          <Camera className="w-7 h-7 text-white" />
-        </div>
-        <h1 className="text-xl font-bold text-[#0F172A]">WineYard Catalog</h1>
+        <Image
+          src="/wine-yard-logo.png"
+          alt="Wine Yard Technologies"
+          width={140}
+          height={100}
+          className="mb-3 object-contain"
+          priority
+        />
+        <h1 className="text-xl font-bold text-[#0F172A]">Wine Yard Catalog</h1>
         <p className="mt-1 text-sm text-[#64748B] text-center">
           {step === 'phone'
             ? 'Enter your mobile number to receive an OTP on WhatsApp'
+            : step === 'no_access'
+            ? 'Access not enabled'
             : 'Account not found'}
         </p>
       </div>
@@ -78,6 +89,16 @@ export default function LoginClient() {
               <p className="mt-3 text-center text-xs text-[#DC2626]">{error}</p>
             )}
           </>
+        ) : step === 'no_access' ? (
+          <CatalogAccessBlockedMessage
+            phoneNumber={phone}
+            onBrowseCatalog={() => router.push('/auth/browse')}
+            onTryAgain={() => {
+              setStep('phone')
+              setPhone('')
+              setError('')
+            }}
+          />
         ) : (
           <UnregisteredMessage
             phoneNumber={phone}
@@ -114,7 +135,7 @@ export default function LoginClient() {
 
       {/* Footer note */}
       <p className="mt-6 text-xs text-[#94A3B8] text-center">
-        WineYard Technologies • CCTV Distributors, Hyderabad
+        Wine Yard Technologies • CCTV Distributors, Hyderabad
       </p>
     </main>
   )
