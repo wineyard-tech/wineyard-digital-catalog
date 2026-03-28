@@ -237,7 +237,8 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
           locationArea={locationArea}
           contactName={contactName}
           onAvatarClick={() => contactName ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
-          onSearch={(q) => { if (q.trim()) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
+          onSearch={(q) => setSearchQuery(q)}
+          searchDefaultValue={initialQuery}
         />
 
         {/* Category tab bar — pill style, lives inside header to eliminate positional gap */}

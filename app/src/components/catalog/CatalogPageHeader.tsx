@@ -11,6 +11,8 @@ interface CatalogPageHeaderProps {
   contactName: string | null
   onAvatarClick: () => void
   onSearch: (q: string) => void
+  /** Pre-fill the search input (e.g. from URL query param) */
+  searchDefaultValue?: string
 }
 
 /**
@@ -23,6 +25,7 @@ export default function CatalogPageHeader({
   contactName,
   onAvatarClick,
   onSearch,
+  searchDefaultValue,
 }: CatalogPageHeaderProps) {
   const router = useRouter()
 
@@ -60,7 +63,7 @@ export default function CatalogPageHeader({
       </div>
 
       {/* Search bar — always visible */}
-      <SearchBar onSearch={onSearch} />
+      <SearchBar onSearch={onSearch} defaultValue={searchDefaultValue} />
     </>
   )
 }
