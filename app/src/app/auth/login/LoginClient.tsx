@@ -6,8 +6,9 @@ import Link from 'next/link'
 import { Camera } from 'lucide-react'
 import PhoneInput from '@/components/auth/PhoneInput'
 import UnregisteredMessage from '@/components/auth/UnregisteredMessage'
+import CatalogAccessBlockedMessage from '@/components/auth/CatalogAccessBlockedMessage'
 
-type Step = 'phone' | 'unregistered'
+type Step = 'phone' | 'unregistered' | 'no_access'
 
 export default function LoginClient() {
   const router = useRouter()
@@ -33,6 +34,7 @@ export default function LoginClient() {
       const data = (await res.json()) as {
         success: boolean
         registered: boolean
+        catalogAccess?: boolean
         error?: string
       }
 
@@ -42,8 +44,10 @@ export default function LoginClient() {
       }
 
       setPhone(phoneNumber)
-      if (data.registered) {
+      if (data.registered && data.catalogAccess) {
         router.push(`/auth/verify?phone=${encodeURIComponent(phoneNumber)}`)
+      } else if (data.registered && !data.catalogAccess) {
+        setStep('no_access')
       } else {
         setStep('unregistered')
       }
@@ -65,6 +69,8 @@ export default function LoginClient() {
         <p className="mt-1 text-sm text-[#64748B] text-center">
           {step === 'phone'
             ? 'Enter your mobile number to receive an OTP on WhatsApp'
+            : step === 'no_access'
+            ? 'Access not enabled'
             : 'Account not found'}
         </p>
       </div>
@@ -78,6 +84,16 @@ export default function LoginClient() {
               <p className="mt-3 text-center text-xs text-[#DC2626]">{error}</p>
             )}
           </>
+        ) : step === 'no_access' ? (
+          <CatalogAccessBlockedMessage
+            phoneNumber={phone}
+            onBrowseCatalog={() => router.push('/auth/browse')}
+            onTryAgain={() => {
+              setStep('phone')
+              setPhone('')
+              setError('')
+            }}
+          />
         ) : (
           <UnregisteredMessage
             phoneNumber={phone}
