@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation'
+import Image from 'next/image'
 import { createClient } from '../../../lib/supabase/server'
 import OtpForm from '../../../components/auth/OtpForm'
 
@@ -37,20 +38,15 @@ export default async function AuthPage({ params }: AuthPageProps) {
     >
       {/* Logo / header */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
-        <div
-          style={{
-            width: 64,
-            height: 64,
-            background: '#0066CC',
-            borderRadius: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 28,
-            margin: '0 auto 16px',
-          }}
-        >
-          📷
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <Image
+            src="/wine-yard-logo.png"
+            alt="Wine Yard Technologies"
+            width={140}
+            height={100}
+            style={{ objectFit: 'contain' }}
+            priority
+          />
         </div>
         <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: '#1A1A2E' }}>
           Wine Yard Catalog
