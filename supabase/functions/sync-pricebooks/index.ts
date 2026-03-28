@@ -83,7 +83,10 @@ serve(async (req) => {
         const pageItems: Array<{ item_id: string; pricebook_rate?: number; rate?: number }> =
           pbDetail?.pricebook?.pricebook_items ?? []
         pbItems.push(...pageItems)
-        if (!pbDetail?.page_context?.has_more_page) break
+        // Dual-condition: Zoho's has_more_page can be wrong when items list is filtered.
+        // Only stop when both has_more_page is false AND we got a partial page.
+        if (pageItems.length === 0) break
+        if (!pbDetail?.page_context?.has_more_page && pageItems.length < 200) break
         pbPage++
       }
       if (pbFailed) continue

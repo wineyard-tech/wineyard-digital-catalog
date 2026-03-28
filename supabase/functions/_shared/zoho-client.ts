@@ -100,15 +100,21 @@ export async function fetchAllZohoPages<T>(
   maxPages = 100
 ): Promise<T[]> {
   const all: T[] = []
+  const PER_PAGE = 200
 
   for (let page = 1; page <= maxPages; page++) {
-    const json = await zohoGet(path, token, orgId, { per_page: 200, page, ...extraParams })
+    const json = await zohoGet(path, token, orgId, { per_page: PER_PAGE, page, ...extraParams })
     if (json.code !== 0) throw new Error(`Zoho error on ${path} p${page}: ${json.message}`)
 
     const rows: T[] = json[responseKey] ?? []
     all.push(...rows)
 
-    if (!json.page_context?.has_more_page) break
+    // Stop when empty — no more data regardless of has_more_page
+    if (rows.length === 0) break
+    // Dual-condition: Zoho's has_more_page can be wrong when filter_by is active.
+    // Only trust it when we also got a partial page (< PER_PAGE), which is a reliable
+    // signal that this is genuinely the last page.
+    if (!json.page_context?.has_more_page && rows.length < PER_PAGE) break
   }
 
   return all
@@ -138,8 +144,10 @@ export async function* streamZohoPages<T>(
   startPage = 1
 ): AsyncGenerator<{ rows: T[]; page: number; hasMore: boolean }> {
   const endPage = startPage + maxPages - 1
+  const PER_PAGE = 200
+
   for (let page = startPage; page <= endPage; page++) {
-    const json = await zohoGet(path, token, orgId, { per_page: 200, page, ...extraParams })
+    const json = await zohoGet(path, token, orgId, { per_page: PER_PAGE, page, ...extraParams })
     if (json.code !== 0) throw new Error(`Zoho error on ${path} p${page}: ${json.message}`)
 
     const rows: T[] = json[responseKey] ?? []
@@ -147,6 +155,10 @@ export async function* streamZohoPages<T>(
 
     yield { rows, page, hasMore }
 
-    if (!hasMore) break
+    // Stop when empty — no more data regardless of has_more_page
+    if (rows.length === 0) break
+    // Dual-condition: Zoho's has_more_page can be unreliable when filter_by is active.
+    // A full page (PER_PAGE rows) means there may be more even if has_more_page is false.
+    if (!hasMore && rows.length < PER_PAGE) break
   }
 }
