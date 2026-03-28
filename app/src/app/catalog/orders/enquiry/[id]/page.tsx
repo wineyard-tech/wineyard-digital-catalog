@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
+import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, AlertTriangle } from 'lucide-react'
 import { LineItemRow } from '@/components/orders/LineItemRow'
@@ -70,6 +70,7 @@ export default function EnquiryDetailPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showConfirm, setShowConfirm] = useState(false)
+  const reorderingRef = useRef(false)
 
   useEffect(() => {
     fetch(`/api/enquiries/${id}`)
@@ -114,7 +115,7 @@ export default function EnquiryDetailPage({
   PHASE2_SO_ARCHIVE_END */
 
   function handleCTA() {
-    if (!data) return
+    if (!data || reorderingRef.current) return
     if (availableItems.length === 0) return
     if (cartItems.length > 0) {
       setShowConfirm(true)
@@ -124,7 +125,8 @@ export default function EnquiryDetailPage({
   }
 
   function doReorder() {
-    if (!data) return
+    if (!data || reorderingRef.current) return
+    reorderingRef.current = true
     loadItems(
       availableItems.map((li) => ({
         zoho_item_id: li.zoho_item_id,
@@ -142,16 +144,36 @@ export default function EnquiryDetailPage({
 
   if (loading) {
     return (
-      <main style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-        <span style={{ width: 24, height: 24, border: '3px solid #059669', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <main style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 100 }}>
+        {/* Skeleton header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: '#FFFFFF', borderBottom: '1px solid #F3F4F6', position: 'sticky', top: 0, zIndex: 10 }}>
+          <div className="skeleton" style={{ width: 20, height: 20, borderRadius: 4 }} />
+          <div style={{ flex: 1 }}>
+            <div className="skeleton" style={{ height: 16, width: 120, borderRadius: 4, marginBottom: 6 }} />
+            <div className="skeleton" style={{ height: 11, width: 80, borderRadius: 4 }} />
+          </div>
+          <div className="skeleton" style={{ height: 22, width: 64, borderRadius: 12 }} />
+        </div>
+        {/* Skeleton line items */}
+        <div style={{ padding: '0 16px' }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 0', borderBottom: '1px solid #F3F4F6' }}>
+              <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 6, flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div className="skeleton" style={{ height: 14, width: '70%', borderRadius: 4, marginBottom: 8 }} />
+                <div className="skeleton" style={{ height: 11, width: '40%', borderRadius: 4 }} />
+              </div>
+              <div className="skeleton" style={{ width: 52, height: 14, borderRadius: 4, flexShrink: 0 }} />
+            </div>
+          ))}
+        </div>
       </main>
     )
   }
 
   if (error || !data) {
     return (
-      <main style={{ padding: '80px 16px', textAlign: 'center' }}>
+      <main style={{ maxWidth: 768, margin: '0 auto', padding: '80px 16px', textAlign: 'center' }}>
         <p style={{ fontSize: 14, color: '#6B7280' }}>{error ?? 'Enquiry not found'}</p>
       </main>
     )
@@ -165,7 +187,7 @@ export default function EnquiryDetailPage({
   const chipStyle = statusColors[data.status] ?? { bg: '#F3F4F6', color: '#6B7280' }
 
   return (
-    <main style={{ paddingBottom: 100 }}>
+    <main style={{ maxWidth: 768, margin: '0 auto', paddingBottom: 100 }}>
       {/* Sticky header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12,
@@ -244,6 +266,7 @@ export default function EnquiryDetailPage({
       {/* Fixed CTA */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0,
+        maxWidth: 768, margin: '0 auto',
         padding: '12px 16px 28px',
         background: '#FFFFFF',
         borderTop: '1px solid #F3F4F6',
