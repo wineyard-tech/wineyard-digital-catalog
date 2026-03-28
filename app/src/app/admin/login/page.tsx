@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Image from 'next/image'
 import { createClient } from '../../../lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -47,23 +48,18 @@ export default function AdminLoginPage() {
         }}
       >
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              background: '#0066CC',
-              borderRadius: 14,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 24,
-              margin: '0 auto 12px',
-            }}
-          >
-            🔒
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <Image
+              src="/wine-yard-logo.png"
+              alt="Wine Yard Technologies"
+              width={140}
+              height={100}
+              style={{ objectFit: 'contain' }}
+              priority
+            />
           </div>
           <h1 style={{ margin: '0 0 4px', fontSize: 20, fontWeight: 800, color: '#1A1A2E' }}>Admin Login</h1>
-          <p style={{ margin: 0, fontSize: 13, color: '#6B7280' }}>WineYard Catalog Management</p>
+          <p style={{ margin: 0, fontSize: 13, color: '#6B7280' }}>Wine Yard Catalog Management</p>
         </div>
 
         <form onSubmit={handleSubmit}>

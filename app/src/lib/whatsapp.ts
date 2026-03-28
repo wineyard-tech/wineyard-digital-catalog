@@ -111,7 +111,7 @@ export async function sendOtpMessage(
 
   await sendText(
     to,
-    `Hi ${name}! Here's your WineYard catalog link:\n${catalogLink}\n\nOpen the link and enter your OTP to access your personalised pricing.`
+    `Hi ${name}! Here's your Wine Yard catalog link:\n${catalogLink}\n\nOpen the link and enter your OTP to access your personalised pricing.`
   )
 
   try {
@@ -157,7 +157,7 @@ export async function sendGuestLink(
 
   await sendText(
     to,
-    `Welcome! Browse the WineYard CCTV catalog (valid 24 hours):\n${guestLink}\n\nFor personalised pricing, contact us to register:\n${wabaLink}`
+    `Welcome! Browse the Wine Yard CCTV catalog (valid 24 hours):\n${guestLink}\n\nFor personalised pricing, contact us to register:\n${wabaLink}`
   )
 }
 
@@ -180,7 +180,7 @@ export async function sendQuotation(
     .join('\n')
 
   const message =
-    `*WineYard Quotation #${estimateNumber}*\n` +
+    `*Wine Yard Quotation #${estimateNumber}*\n` +
     `──────────────────\n` +
     `${lineRows}\n` +
     `──────────────────\n` +
@@ -321,7 +321,7 @@ export async function sendOrderConfirmation(
       .join('\n')
 
     const message =
-      `✅ *WineYard Order Confirmed #${data.salesorderNumber}*\n` +
+      `✅ *Wine Yard Order Confirmed #${data.salesorderNumber}*\n` +
       `──────────────────\n` +
       `${lineRows}\n` +
       `──────────────────\n` +

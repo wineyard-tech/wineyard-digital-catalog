@@ -28,7 +28,7 @@ export default function UnregisteredMessage({
       </h2>
       <p className="text-sm text-[#64748B] mb-1">
         <span className="font-semibold text-[#0F172A]">{displayPhone}</span> is not
-        registered with WineYard.
+        registered with Wine Yard.
       </p>
       <p className="text-sm text-[#64748B] mb-6">
         Contact us on WhatsApp to get access and personalised pricing.

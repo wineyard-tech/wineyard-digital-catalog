@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
     })
     sendUnregisteredAlert(phone, now) // intentionally not awaited
     return NextResponse.json(
-      { success: true, registered: false, message: 'Please contact WineYard to register.' },
+      { success: true, registered: false, message: 'Please contact Wine Yard to register.' },
       { status: 200 },
     )
   }

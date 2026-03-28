@@ -18,7 +18,7 @@ export default function AdminEnquiriesPage() {
       >
         <div>
           <h1 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#1A1A2E' }}>Enquiries</h1>
-          <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>WineYard Catalog Admin</p>
+          <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>Wine Yard Catalog Admin</p>
         </div>
         <form action="/api/auth/logout" method="POST">
           <button
