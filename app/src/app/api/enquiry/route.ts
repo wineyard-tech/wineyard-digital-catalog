@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server'
 import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { createEstimate, getEstimatePublicUrl } from '@/lib/zoho'
+import { createEstimate, getEstimatePublicUrl, markEstimateSent } from '@/lib/zoho'
 import {
   sendEstimateNotification,
   sendAdminAlert,
@@ -71,6 +71,30 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (est) {
+      // ── Compute nearest location if coords provided ────────────────────────
+      let updateLocationId: string | null = null
+      if (body.user_lat != null && body.user_lng != null &&
+          isFinite(body.user_lat) && isFinite(body.user_lng)) {
+        const { data: locs } = await supabase
+          .from('locations')
+          .select('zoho_location_id, latitude, longitude')
+          .not('latitude', 'is', null)
+          .not('longitude', 'is', null)
+          .eq('status', 'active')
+        if (locs && locs.length > 0) {
+          const geocoded: GeocodedLocation[] = (locs as Array<{
+            zoho_location_id: string
+            latitude: number
+            longitude: number
+          }>).map(l => ({
+            zoho_location_id: l.zoho_location_id,
+            latitude: l.latitude,
+            longitude: l.longitude,
+          }))
+          updateLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
+        }
+      }
+
       const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       await supabase
         .from('estimates')
@@ -82,6 +106,7 @@ export async function POST(request: NextRequest) {
           total,
           expires_at: newExpiry,
           app_whatsapp_sent: false, // re-send below
+          ...(updateLocationId ? { location_id: updateLocationId } : {}),
         })
         .eq('id', est.id)
 
@@ -226,7 +251,16 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to create estimate. Please try again.' }, { status: 502 })
   }
 
+  // ── Mark estimate as SENT in Zoho (enables public URL + customer visibility) ─
+  // Best-effort: proceed even if this fails — estimate was created in Zoho.
+  try {
+    await markEstimateSent(zohoEstimateId)
+  } catch (err) {
+    console.warn('[enquiry] Failed to mark estimate as sent:', err instanceof Error ? err.message : String(err))
+  }
+
   // ── Fetch Zoho public URL (best-effort — null if GET fails) ─────────────
+  // estimate_url is only available after marking as sent
   const estimateUrl = await getEstimatePublicUrl(zohoEstimateId)
 
   // ── Persist to Supabase with Zoho's canonical number and ID ──────────────
