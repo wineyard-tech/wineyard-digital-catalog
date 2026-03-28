@@ -77,7 +77,7 @@ function applySortMode(products: PurchasedProduct[], mode: SortMode): PurchasedP
 export default function BuyAgainPage() {
   const router = useRouter()
   const hidden = useScrollDirection()
-  const { user, isAuthenticated, loading: authLoading } = useAuth()
+  const { user, isAuthenticated } = useAuth()
 
   // Location area from wl cookie (same as CatalogClient)
   const [locationArea, setLocationArea] = useState<string | null>(null)
@@ -153,6 +153,21 @@ export default function BuyAgainPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // ── Derived search state ──────────────────────────────────────────────────────
+  const trimmedQuery = searchQuery.trim()
+  const displayBestsellers = trimmedQuery
+    ? bestsellers.filter(i =>
+        i.item_name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+        i.sku.toLowerCase().includes(trimmedQuery.toLowerCase())
+      )
+    : bestsellers
+  const displayProducts = trimmedQuery
+    ? products.filter(i =>
+        i.item_name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+        i.sku.toLowerCase().includes(trimmedQuery.toLowerCase())
+      )
+    : products
+
   // ── Sticky catalog-style header (shared component) ──────────────────────────
   const header = (
     <header
@@ -170,7 +185,7 @@ export default function BuyAgainPage() {
         locationArea={locationArea}
         contactName={isAuthenticated ? (user?.contact_name ?? null) : null}
         onAvatarClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
-        onSearch={(q) => { if (q) router.push(`/catalog?q=${encodeURIComponent(q)}`) }}
+        onSearch={(q) => setSearchQuery(q)}
       />
     </header>
   )
