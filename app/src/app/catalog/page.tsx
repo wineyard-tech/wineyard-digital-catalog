@@ -3,7 +3,12 @@ import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import HomeClient, { type Category } from '@/components/catalog/HomeClient'
 
-export default async function CatalogPage() {
+export default async function CatalogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>
+}) {
+  const { q } = await searchParams
   const cookieStore = await cookies()
   const sessionToken = cookieStore.get('session_token')?.value
 
@@ -30,6 +35,7 @@ export default async function CatalogPage() {
     <HomeClient
       contactName={contactName}
       categories={(rawCategories ?? []) as unknown as Category[]}
+      initialQuery={q ?? ''}
     />
   )
 }
