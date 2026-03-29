@@ -73,7 +73,13 @@ async function callWhatsAppApi(payload: Record<string, unknown>): Promise<string
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+    // Meta API expects digits-only (no leading +). session.phone is E.164 (+91...),
+    // so strip the + here to normalise all callers consistently.
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      ...payload,
+      to: String(payload.to ?? '').replace(/^\+/, ''),
+    }),
   })
 
   if (!res.ok) {
