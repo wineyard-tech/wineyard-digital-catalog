@@ -144,6 +144,7 @@ export async function createEstimate(
       name: item.item_name,
       quantity: item.quantity,
       rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
+      tax_id: '',        // clear item-level tax so Zoho total = subtotal (no GST added)
     })),
     ...(options?.notes ? { notes: options.notes } : {}),
     ...(options?.locationId ? { location_id: options.locationId } : {}),
