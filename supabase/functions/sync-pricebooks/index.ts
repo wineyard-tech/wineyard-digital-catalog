@@ -135,7 +135,7 @@ serve(async (req) => {
         .map(pi => ({
           zoho_pricebook_id: pricebookId,
           zoho_item_id: pi.item_id,
-          custom_rate: dec(pi.rate) ?? 0,
+          custom_rate: dec(pi.pricebook_rate ?? pi.rate) ?? 0,
           updated_at: new Date().toISOString(),
         }))
         // Only insert rows where the item now exists (stubs included)

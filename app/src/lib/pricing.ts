@@ -58,6 +58,7 @@ async function fetchPricebookRates(
     .from('pricebook_items')
     .select('zoho_item_id, custom_rate')
     .eq('zoho_pricebook_id', pricebookId)
+    .gt('custom_rate', 0)  // exclude zero-rate rows; treat them as "not set" → fallback to base_rate
 
   if (!pbRows || pbRows.length === 0) return {}
 
