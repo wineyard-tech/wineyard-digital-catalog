@@ -373,6 +373,7 @@ export interface AdminLocationNotificationData {
   contactLocation: string | null   // user's area/city from wl cookie
   total: number
   itemCount: number
+  estimateUrl: string
   zohoEstimateId: string           // {{1}} for button
 }
 
@@ -422,7 +423,7 @@ export async function sendAdminLocationNotification(
             type: 'button',
             sub_type: 'url',
             index: '0',
-            parameters: [{ type: 'text', text: data.zohoEstimateId }],
+            parameters: [{ type: 'text', text: extractCEstimateId(data.estimateUrl) ?? data.zohoEstimateId }],
           },
         ],
       },

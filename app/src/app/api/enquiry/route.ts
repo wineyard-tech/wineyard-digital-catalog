@@ -336,6 +336,7 @@ export async function POST(request: NextRequest) {
     total,
     itemCount: body.items.length,
     zohoEstimateId,
+    estimateUrl: estimateUrl ?? null,
   }).catch(err => console.error('[enquiry] admin notification failed:', err))
 
   console.log(`[enquiry] done: ${zohoEstimateNumber} wa_customer=${waResult.success}`)
