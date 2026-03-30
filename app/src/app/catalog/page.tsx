@@ -52,6 +52,7 @@ export default async function CatalogPage({
     <HomeClient
       contactName={contactName}
       categories={categories}
+      initialQuery={q ?? ''}
     />
   )
 }

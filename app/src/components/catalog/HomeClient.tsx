@@ -107,7 +107,10 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
   }, [])
 
   // ── All tab keys in display order ───────────────────────────────────────
-  const allTabs = ['all', ...categories.map(c => c.category_name)]
+  const sortedCategories = [...categories].sort(
+    (a, b) => (a.display_order - b.display_order) || a.category_name.localeCompare(b.category_name)
+  )
+  const allTabs = ['all', ...sortedCategories.map(c => c.category_name)]
 
   // ── Swipe gestures ───────────────────────────────────────────────────────
   const { handleTouchStart, handleTouchEnd } = useSwipe({
@@ -335,7 +338,7 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
                 gap: 10,
               }}
             >
-              {categories.map((cat) => {
+              {sortedCategories.map((cat) => {
                 const Icon = getCategoryIcon(cat.category_name)
                 return (
                   <button
