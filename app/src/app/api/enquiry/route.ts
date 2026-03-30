@@ -324,8 +324,10 @@ export async function POST(request: NextRequest) {
     console.error('[enquiry] WhatsApp send failed:', waResult.error)
   }
 
-  // ── Admin notification — best-effort, never blocks response ─────────────
-  sendAdminLocationNotification({
+  // ── Admin notification — awaited so serverless doesn't kill it mid-flight ──
+  // sendAdminLocationNotification has its own try/catch and plain-text fallback;
+  // this outer catch ensures any unexpected throw never breaks the response.
+  await sendAdminLocationNotification({
     locationName: nearestLocationName,
     estimateNumber: zohoEstimateNumber,
     contactName: session.contact_name,

@@ -394,6 +394,8 @@ export async function sendAdminLocationNotification(
 
   const locationLabel = data.locationName ?? 'Unknown'
 
+  console.log(`[whatsapp] sending admin location notification to ${adminNumber} for ${data.estimateNumber}`)
+
   try {
     await callWhatsAppApi({
       to: adminNumber,
@@ -426,10 +428,11 @@ export async function sendAdminLocationNotification(
     console.log(`[whatsapp] admin location notification sent via template for ${data.estimateNumber}`)
     return
   } catch (err) {
-    console.warn('[whatsapp] wineyard_location_notification template failed, falling back to plain text:', err)
+    console.warn('[whatsapp] wineyard_location_notification template failed, falling back to plain text. Error:', err instanceof Error ? err.message : String(err))
   }
 
-  // Plain-text fallback — matches template body exactly
+  // Plain-text fallback — mirrors template body so admin always gets the details
+  console.log(`[whatsapp] attempting plain-text fallback for admin notification (${data.estimateNumber})`)
   try {
     await sendText(
       adminNumber,
@@ -441,7 +444,8 @@ export async function sendAdminLocationNotification(
       `Estimate Details - ${fmt(data.total)} (${data.itemCount} items)\n\n` +
       `Please respond at the earliest.`
     )
+    console.log(`[whatsapp] admin location notification fallback (plain text) sent for ${data.estimateNumber}`)
   } catch (err) {
-    console.error('[whatsapp] admin location notification fallback failed:', err)
+    console.error('[whatsapp] admin location notification fallback failed:', err instanceof Error ? err.message : String(err))
   }
 }

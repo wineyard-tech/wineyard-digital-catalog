@@ -58,12 +58,12 @@ export async function GET(
   // Enrich line items with live stock data from items table
   const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id).filter(Boolean)
 
-  let stockMap = new Map<string, { available_stock: number | null; image_url: string | null }>()
+  let stockMap = new Map<string, { available_stock: number | null; image_url: string | null; item_name: string | null; sku: string | null }>()
 
   if (zohoItemIds.length > 0) {
     const { data: itemRows } = await supabase
       .from('items')
-      .select('zoho_item_id, available_stock, image_urls')
+      .select('zoho_item_id, available_stock, image_urls, item_name, sku')
       .in('zoho_item_id', zohoItemIds)
 
     for (const row of itemRows ?? []) {
@@ -73,6 +73,8 @@ export async function GET(
       stockMap.set(row.zoho_item_id, {
         available_stock: row.available_stock ?? null,
         image_url: imageUrl,
+        item_name: row.item_name ?? null,
+        sku: row.sku ?? null,
       })
     }
   }
@@ -90,8 +92,9 @@ export async function GET(
 
     return {
       zoho_item_id: li.zoho_item_id,
-      item_name: li.item_name,
-      sku: li.sku,
+      // Zoho webhook payloads use 'name' not 'item_name'; fall back to items table as authoritative source
+      item_name: li.item_name || (li as unknown as { name?: string }).name || stock?.item_name || '',
+      sku: li.sku || stock?.sku || '',
       quantity: li.quantity,
       rate: li.rate,
       tax_percentage: li.tax_percentage,

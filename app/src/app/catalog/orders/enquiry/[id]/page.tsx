@@ -259,7 +259,7 @@ export default function EnquiryDetailPage({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>Total</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.total)}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.subtotal)}</span>
         </div>
       </div>
 
