@@ -24,5 +24,6 @@ types/database.generated.ts
 node_modules/
 .worktrees/**/.env.local
 .claude/worktrees/**/.env.local
+.claude/worktrees/**/.claude/
 .vercel
 .env*.local

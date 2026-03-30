@@ -404,7 +404,7 @@ export async function sendAdminLocationNotification(
       type: 'template',
       template: {
         name: 'wineyard_location_notification',
-        language: { code: 'en_IN' },
+        language: { code: 'en' },
         components: [
           {
             type: 'body',
