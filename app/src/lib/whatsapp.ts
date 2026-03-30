@@ -84,6 +84,8 @@ async function callWhatsAppApi(payload: Record<string, unknown>): Promise<string
 
   if (!res.ok) {
     const body = await res.text()
+    const last4 = String(payload.to ?? '').slice(-4)
+    console.error(`[whatsapp] API error ${res.status} (to: ...${last4}):`, body)
     throw new Error(`WhatsApp API error ${res.status}: ${body}`)
   }
 
