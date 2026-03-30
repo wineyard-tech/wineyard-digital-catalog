@@ -139,12 +139,18 @@ export async function createEstimate(
 
   const body = {
     customer_id: contactId,
+    // Suppress GST on estimates — quotes are pre-tax; tax appears on the final invoice.
+    // is_inclusive_tax: false ensures rates are treated as-is (not tax-inclusive).
+    // tax_treatment: 'out_of_scope' instructs Zoho not to apply any tax at the estimate level,
+    // so Zoho's portal total = subtotal (matches what the app displays to customers).
+    is_inclusive_tax: false,
+    tax_treatment: 'out_of_scope',
     line_items: lineItems.map((item) => ({
       item_id: item.zoho_item_id,
       name: item.item_name,
       quantity: item.quantity,
       rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
-      tax_id: '',        // clear item-level tax so Zoho total = subtotal (no GST added)
+      tax_id: '',        // belt-and-suspenders: clear item-level tax override
     })),
     ...(options?.notes ? { notes: options.notes } : {}),
     ...(options?.locationId ? { location_id: options.locationId } : {}),
