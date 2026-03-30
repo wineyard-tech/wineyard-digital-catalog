@@ -26,7 +26,8 @@ function dec(val: unknown): number | null {
 
 interface ZohoPricebookItem {
   item_id: string
-  rate: number | string
+  pricebook_rate?: number | string
+  rate?: number | string
 }
 
 interface ZohoPricebookPayload {
@@ -127,7 +128,7 @@ async function handleUpsert(
   const priceRows = pbItems.map(pi => ({
     zoho_pricebook_id: pricebookId,
     zoho_item_id: pi.item_id,
-    custom_rate: dec(pi.rate) ?? 0,
+    custom_rate: dec(pi.pricebook_rate ?? pi.rate) ?? 0,
     updated_at: new Date().toISOString(),
   }))
 
