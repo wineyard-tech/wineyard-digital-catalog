@@ -373,7 +373,7 @@ export interface AdminLocationNotificationData {
   contactLocation: string | null   // user's area/city from wl cookie
   total: number
   itemCount: number
-  estimateUrl: string
+  estimateUrl: string | null
   zohoEstimateId: string           // {{1}} for button
 }
 
