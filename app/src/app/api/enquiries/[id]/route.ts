@@ -38,7 +38,7 @@ export async function GET(
 
   const { data: estimate, error } = await supabase
     .from('estimates')
-    .select('public_id, estimate_number, date, created_at, total, subtotal, tax_total, line_items, status, converted_to_salesorder_id')
+    .select('public_id, estimate_number, date, created_at, total, subtotal, tax_total, line_items, status, converted_to_salesorder_id, estimate_url')
     .eq('public_id', id)
     .eq('zoho_contact_id', session.zoho_contact_id)
     .maybeSingle()
@@ -51,12 +51,15 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // Webhook-synced line items use Zoho's `item_id`; app-created line items use `zoho_item_id`.
+  // Support both by treating `item_id` as a fallback.
+  type RawLineItem = { zoho_item_id?: string; item_id?: string; item_name?: string; name?: string; sku?: string; quantity: number; rate: number; tax_percentage: number; line_total?: number }
   const rawLineItems = Array.isArray(estimate.line_items)
-    ? (estimate.line_items as { zoho_item_id: string; item_name: string; sku: string; quantity: number; rate: number; tax_percentage: number; line_total: number }[])
+    ? (estimate.line_items as RawLineItem[])
     : []
 
   // Enrich line items with live stock data from items table
-  const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id).filter(Boolean)
+  const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id || li.item_id).filter(Boolean) as string[]
 
   let stockMap = new Map<string, { available_stock: number | null; image_url: string | null; item_name: string | null; sku: string | null }>()
 
@@ -80,7 +83,8 @@ export async function GET(
   }
 
   const lineItems: EnquiryLineItemDetail[] = rawLineItems.map((li) => {
-    const stock = stockMap.get(li.zoho_item_id)
+    const resolvedId = li.zoho_item_id || li.item_id || ''
+    const stock = stockMap.get(resolvedId)
     const available_stock = stock?.available_stock ?? null
 
     let stock_status: EnquiryLineItemDetail['stock_status'] = 'unknown'
@@ -91,9 +95,9 @@ export async function GET(
     }
 
     return {
-      zoho_item_id: li.zoho_item_id,
+      zoho_item_id: resolvedId,
       // Zoho webhook payloads use 'name' not 'item_name'; fall back to items table as authoritative source
-      item_name: li.item_name || (li as unknown as { name?: string }).name || stock?.item_name || '',
+      item_name: li.item_name || li.name || stock?.item_name || '',
       sku: li.sku || stock?.sku || '',
       quantity: li.quantity,
       rate: li.rate,
@@ -125,6 +129,7 @@ export async function GET(
       converted_to_salesorder_id: estimate.converted_to_salesorder_id,
     }),
     estimate_id: estimate.public_id as string,
+    estimate_url: (estimate as unknown as { estimate_url?: string | null }).estimate_url ?? null,
     line_items: lineItems,
   }
 

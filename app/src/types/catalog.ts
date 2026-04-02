@@ -156,5 +156,6 @@ export interface EnquiryDetail {
   tax_total: number;
   status: EnquiryStatus;
   estimate_id: string;
+  estimate_url?: string | null;
   line_items: EnquiryLineItemDetail[];
 }

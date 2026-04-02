@@ -22,7 +22,7 @@ const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48"><rect width="48" height="48" fill="#F3F4F6"/><text x="24" y="30" text-anchor="middle" font-size="22">🍷</text></svg>`
 )}`
 
-export function LineItemRow({ item }: { item: LineItem }) {
+export function LineItemRow({ item, showAddToCart = true }: { item: LineItem; showAddToCart?: boolean }) {
   const { addItem } = useCart()
   const isOOS = item.stock_status === 'out_of_stock'
   const isLimited = item.stock_status === 'limited'
@@ -71,25 +71,27 @@ export function LineItemRow({ item }: { item: LineItem }) {
         )}
       </div>
 
-      {/* Right side: total + add button */}
+      {/* Right side: total + optional add button */}
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>{fmt(item.line_total)}</span>
-        <button
-          onClick={handleAdd}
-          disabled={isOOS}
-          aria-label={`Add ${item.item_name} to cart`}
-          style={{
-            fontSize: 12, fontWeight: 600,
-            padding: '4px 10px',
-            borderRadius: 6,
-            border: `1px solid ${isOOS ? '#D1D5DB' : '#059669'}`,
-            background: 'transparent',
-            color: isOOS ? '#9CA3AF' : '#059669',
-            cursor: isOOS ? 'not-allowed' : 'pointer',
-          }}
-        >
-          + Cart
-        </button>
+        {showAddToCart && (
+          <button
+            onClick={handleAdd}
+            disabled={isOOS}
+            aria-label={`Add ${item.item_name} to cart`}
+            style={{
+              fontSize: 12, fontWeight: 600,
+              padding: '4px 10px',
+              borderRadius: 6,
+              border: `1px solid ${isOOS ? '#D1D5DB' : '#059669'}`,
+              background: 'transparent',
+              color: isOOS ? '#9CA3AF' : '#059669',
+              cursor: isOOS ? 'not-allowed' : 'pointer',
+            }}
+          >
+            + Cart
+          </button>
+        )}
       </div>
     </div>
   )
