@@ -131,6 +131,8 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
       block: 'nearest',
       inline: 'center',
     })
+    // Scroll page to top so items in the newly selected category start from the top
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [activeTab])
 
   // ── Fetch products for a category tab ────────────────────────────────────
@@ -357,16 +359,16 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
                       aspectRatio: '1 / 1.2',
                     }}
                   >
-                    {/* Thumbnail area — padded so image doesn't bleed to edges */}
+                    {/* Thumbnail area — image fills container with padding on the img itself */}
                     <div
                       style={{
                         flex: 1,
+                        minHeight: 0,
                         background: '#F8FAFC',
+                        overflow: 'hidden',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        overflow: 'hidden',
-                        padding: 10,
                       }}
                     >
                       {cat.icon_url ? (
@@ -374,7 +376,14 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
                         <img
                           src={cat.icon_url}
                           alt={cat.category_name}
-                          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'contain',
+                            padding: 8,
+                            boxSizing: 'border-box',
+                          }}
                         />
                       ) : (
                         <Icon size={34} color="#64748B" strokeWidth={1.5} />
