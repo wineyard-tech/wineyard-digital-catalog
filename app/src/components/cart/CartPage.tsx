@@ -372,11 +372,11 @@ export default function CartPage() {
           <MapPin size={16} color={hasLocation ? '#0066CC' : '#F97316'} style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
           <div style={{ flex: 1 }}>
             <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: hasLocation ? '#1A1A2E' : '#EA580C' }}>
-              {hasLocation ? `Delivering to ${deliveryArea}` : 'Set delivery location'}
+              {hasLocation ? `${deliveryArea}` : 'Set delivery location'}
             </p>
             <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
               {hasLocation
-                ? (warehouseName ? `From ${warehouseName}` : 'From nearest Wine Yard warehouse')
+                ? (warehouseName ? `From Wine Yard ${warehouseName}` : 'From nearest Wine Yard warehouse')
                 : 'Required before getting a quote — tap to set'}
             </p>
           </div>
