@@ -28,7 +28,7 @@ const WATCHED_FIELDS = [
   'pricebook_id', 'phone', 'email',
   'payment_terms', 'payment_terms_label',
   'currency_code', 'contact_type',
-  'online_catalogue_access',
+  'online_catalogue_access', 'catalog_access',
 ]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -42,6 +42,7 @@ interface ZohoContactPerson {
   mobile?: string
   is_primary_contact?: boolean
   communication_preference?: string
+  custom_fields?: Array<{ api_name?: string; value?: unknown; [key: string]: unknown }>
 }
 
 interface ZohoContactPayload {
@@ -140,12 +141,15 @@ async function handleUpsert(
   logger.info('PRICEBOOK', { contact_id: contactId, pricebook_id: pricebookId ?? 'none' })
 
   // ── 3. Build contact row ───────────────────────────────────────────────────
-  // Extract cf_online_catalogue_access from Zoho custom_fields array
+  // Extract custom boolean flags from Zoho custom_fields array
   const cfFields: Array<{ api_name?: string; value?: unknown }> =
     Array.isArray(contact.custom_fields) ? contact.custom_fields : []
   const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
   const online_catalogue_access =
     cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
+  const cfCatalogAccessEntry = cfFields.find(f => f.api_name === 'cf_catalog_access')
+  const catalog_access =
+    cfCatalogAccessEntry?.value === true || cfCatalogAccessEntry?.value === 'true' || false
 
   const contactRow = {
     zoho_contact_id:           contactId,
@@ -165,6 +169,7 @@ async function handleUpsert(
     currency_code:             contact.currency_code || 'INR',
     custom_fields:             contact.custom_fields ?? [],
     online_catalogue_access,
+    catalog_access,
     created_time:              contact.created_time || null,
     last_modified_time:        contact.last_modified_time || null,
     updated_at:                new Date().toISOString(),
@@ -236,19 +241,27 @@ async function handleUpsert(
 
     // ── a) UPSERT active persons from payload ──────────────────────────────
     if (validPersons.length > 0) {
-      const personRows = validPersons.map((p) => ({
-        zoho_contact_person_id:   p.contact_person_id,
-        zoho_contact_id:          contactId,
-        first_name:               p.first_name || null,
-        last_name:                p.last_name || null,
-        email:                    p.email || null,
-        phone:                    normalizeIndianPhone(p.phone),
-        mobile:                   normalizeIndianPhone(p.mobile),
-        is_primary:               p.is_primary_contact ?? false,
-        communication_preference: p.communication_preference ?? null,
-        status:                   'active',
-        updated_at:               new Date().toISOString(),
-      }))
+      const personRows = validPersons.map((p) => {
+        const personCfFields: Array<{ api_name?: string; value?: unknown }> =
+          Array.isArray(p.custom_fields) ? p.custom_fields : []
+        const personCatalogAccessEntry = personCfFields.find(f => f.api_name === 'cf_catalog_access')
+        const person_catalog_access =
+          personCatalogAccessEntry?.value === true || personCatalogAccessEntry?.value === 'true' || false
+        return {
+          zoho_contact_person_id:   p.contact_person_id,
+          zoho_contact_id:          contactId,
+          first_name:               p.first_name || null,
+          last_name:                p.last_name || null,
+          email:                    p.email || null,
+          phone:                    normalizeIndianPhone(p.phone),
+          mobile:                   normalizeIndianPhone(p.mobile),
+          is_primary:               p.is_primary_contact ?? false,
+          communication_preference: p.communication_preference ?? null,
+          catalog_access:           person_catalog_access,
+          status:                   'active',
+          updated_at:               new Date().toISOString(),
+        }
+      })
 
       const { error: upsertErr } = await supabase
         .from('contact_persons')

@@ -570,12 +570,15 @@ async function syncAllContacts(
         console.log(`[contacts] "${contact.contact_name}" phone from ${phoneSource}: ${phone}`)
       }
 
-      // Extract cf_online_catalogue_access from Zoho custom_fields array
+      // Extract custom boolean flags from Zoho custom_fields array
       const cfFields: Array<{ api_name?: string; value?: unknown }> =
         Array.isArray(contact.custom_fields) ? contact.custom_fields : []
       const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
       const online_catalogue_access =
         cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
+      const cfCatalogAccessEntry = cfFields.find(f => f.api_name === 'cf_catalog_access')
+      const catalog_access =
+        cfCatalogAccessEntry?.value === true || cfCatalogAccessEntry?.value === 'true' || false
 
       contactRows.push({
         zoho_contact_id:            contact.contact_id,
@@ -595,6 +598,7 @@ async function syncAllContacts(
         currency_code:              contact.currency_code || 'INR',
         custom_fields:              Array.isArray(contact.custom_fields) ? contact.custom_fields : [],
         online_catalogue_access,
+        catalog_access,
         created_time:               contact.created_time || null,
         last_modified_time:         contact.last_modified_time || null,
         updated_at:                 new Date().toISOString(),
@@ -602,6 +606,11 @@ async function syncAllContacts(
 
       for (const person of (contact.contact_persons ?? [])) {
         if (!person.contact_person_id) continue
+        const personCfFields: Array<{ api_name?: string; value?: unknown }> =
+          Array.isArray(person.custom_fields) ? person.custom_fields : []
+        const personCatalogAccessEntry = personCfFields.find(f => f.api_name === 'cf_catalog_access')
+        const person_catalog_access =
+          personCatalogAccessEntry?.value === true || personCatalogAccessEntry?.value === 'true' || false
         personRows.push({
           zoho_contact_person_id:  person.contact_person_id,
           zoho_contact_id:         contact.contact_id,
@@ -612,6 +621,7 @@ async function syncAllContacts(
           mobile:                  normalizeIndianPhone(person.mobile),
           is_primary:              person.is_primary_contact ?? false,
           communication_preference: person.communication_preference ?? null,
+          catalog_access:          person_catalog_access,
         })
       }
     }
