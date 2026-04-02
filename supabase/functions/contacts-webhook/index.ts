@@ -244,6 +244,9 @@ async function handleUpsert(
       const personRows = validPersons.map((p) => {
         const personCfFields: Array<{ api_name?: string; value?: unknown }> =
           Array.isArray(p.custom_fields) ? p.custom_fields : []
+        const personOnlineCatalogEntry = personCfFields.find(f => f.api_name === 'cf_online_catalogue_access')
+        const person_online_catalogue_access =
+          personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'true' || false
         const personCatalogAccessEntry = personCfFields.find(f => f.api_name === 'cf_catalog_access')
         const person_catalog_access =
           personCatalogAccessEntry?.value === true || personCatalogAccessEntry?.value === 'true' || false
@@ -257,6 +260,7 @@ async function handleUpsert(
           mobile:                   normalizeIndianPhone(p.mobile),
           is_primary:               p.is_primary_contact ?? false,
           communication_preference: p.communication_preference ?? null,
+          online_catalogue_access:  person_online_catalogue_access,
           catalog_access:           person_catalog_access,
           status:                   'active',
           updated_at:               new Date().toISOString(),
