@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "WineYard Dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/phanikrovvidi/projects/wineyard-catalog/app",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["-c", "PATH=/opt/homebrew/bin:$PATH npm run dev"],
+      "cwd": "app",
       "port": 3000,
       "autoPort": true
     }
