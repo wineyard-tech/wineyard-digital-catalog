@@ -12,6 +12,10 @@ supabase/.branches/
 supabase/.temp/
 supabase/functions/.env
 
+# Data
+data/*
+data/**/*
+
 # OS
 .DS_Store
 Thumbs.db

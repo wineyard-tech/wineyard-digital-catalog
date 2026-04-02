@@ -292,7 +292,7 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
       upc:                     item.upc || null,
       ean:                     item.ean || null,
       part_number:             item.part_number || null,
-      image_urls:              (item.image_documents ?? []).map((img: any) => img.image_url).filter(Boolean),
+      // image_urls:              (item.image_documents ?? []).map((img: any) => img.image_url).filter(Boolean),
       custom_fields:           item.custom_fields ?? {},
       created_time:            item.created_time || null,
       last_modified_time:      item.last_modified_time || null,

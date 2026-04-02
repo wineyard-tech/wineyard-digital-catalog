@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "upload:item-images": "node scripts/upload-item-images.mjs"
+  },
   "devDependencies": {
     "@supabase/supabase-js": "^2.99.1",
     "csv-parse": "^6.2.1"
