@@ -105,14 +105,20 @@ export async function GET(
     }
   })
 
+  const subtotalNum = Number(estimate.subtotal ?? 0)
+  // Derive tax_total from subtotal for old records where it was stored as 0.
+  // All new estimates have tax_total = round(subtotal × 0.18) written at creation time.
+  const storedTaxTotal = Number(estimate.tax_total ?? 0)
+  const taxTotal = storedTaxTotal > 0 ? storedTaxTotal : Math.round(subtotalNum * 0.18)
+
   const detail: EnquiryDetail = {
     id: estimate.public_id as string,
     doc_number: estimate.estimate_number,
     date: estimate.date ?? estimate.created_at?.slice(0, 10) ?? '',
     // PostgREST returns DECIMAL columns as strings — coerce to number for fmt()
-    total: Number(estimate.total),
-    subtotal: Number(estimate.subtotal ?? 0),
-    tax_total: Number(estimate.tax_total ?? 0),
+    total: subtotalNum,   // Total = Subtotal; tax is decorative, not added to total
+    subtotal: subtotalNum,
+    tax_total: taxTotal,
     status: computeStatus({
       status: estimate.status,
       created_at: estimate.created_at,
