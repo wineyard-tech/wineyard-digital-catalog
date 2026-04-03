@@ -214,7 +214,7 @@ export default function LocationPage() {
       {/* Heading */}
       <div style={{ padding: '20px 16px 12px' }}>
         <h1 style={{ margin: '0 0 4px', fontSize: 22, fontWeight: 800, color: '#0F172A' }}>
-          Where should we deliver?
+          Select Location
         </h1>
         <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>
           We&apos;ll show stock from your nearest Wine Yard warehouse
