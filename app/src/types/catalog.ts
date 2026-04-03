@@ -78,6 +78,7 @@ export interface EnquiryResponse {
   success: boolean;
   estimate_number: string;
   estimate_id: string;       // public_id UUID — used for deep links
+  estimate_url?: string | null;  // Zoho public estimate URL — available immediately if Zoho returned it
   whatsapp_sent: boolean;
   sync_pending?: boolean;    // true when Zoho sync failed but WhatsApp was still sent
   error?: string;

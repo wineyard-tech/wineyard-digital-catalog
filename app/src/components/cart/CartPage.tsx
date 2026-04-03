@@ -209,8 +209,18 @@ export default function CartPage() {
           </p>
         )}
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
-          {quoteResult.whatsapp_sent ? 'Check your WhatsApp — your quote is on its way.' : 'Quote saved. WhatsApp delivery may be delayed.'}
+          Our team will contact you within 1 hour. Check WhatsApp for updates.
         </p>
+        {quoteResult.estimate_url && (
+          <a
+            href={quoteResult.estimate_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'block', marginBottom: 12, width: '100%', maxWidth: 280, background: '#EFF6FF', color: '#1D4ED8', border: '1.5px solid #BFDBFE', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
+          >
+            Open Estimate ↗
+          </a>
+        )}
         <button
           onClick={() => router.push(`/catalog/orders/enquiry/${quoteResult.estimate_id}`)}
           style={{ background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 12, width: '100%', maxWidth: 280 }}

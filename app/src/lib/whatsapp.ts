@@ -210,6 +210,7 @@ export async function sendQuotation(
 export interface EstimateTemplateData {
   customerName: string
   estimateNumber: string
+  locationName: string | null   // nearest warehouse name for {{location_name}} param
   items: CartItem[]
   totals: QuoteTotals
   estimateUrl: string | null    // Zoho public URL; null → plain-text fallback used
@@ -217,18 +218,15 @@ export interface EstimateTemplateData {
 }
 
 /**
- * Sends the `wineyard_estimate` WABA template with a Zoho estimate portal button.
+ * Sends the `wineyard_customer_notification` WABA template with a Zoho estimate portal button.
  * Falls back to sendQuotation (plain text + URL) if the template call fails.
  *
  * Template parameters (3 named body params):
- *   {{estimate_number}}  = Estimate number (EST-XXXXX)
- *   {{total_amount}}     = Total amount (formatted)
- *   {{item_count}}       = Number of line items
+ *   {{item_count}}    = Number of line items
+ *   {{location_name}} = Nearest warehouse/location name
+ *   {{total_amount}}  = Total amount (formatted)
  *
  * Button (index 0): URL button — dynamic suffix is the Zoho estimate_id.
- *
- * NOTE: Template requires Meta re-approval before the 3-param version is live.
- * Until approved, template calls fail and plain-text fallback is used automatically.
  */
 export async function sendEstimateNotification(
   to: string,
@@ -242,15 +240,15 @@ export async function sendEstimateNotification(
       to,
       type: 'template',
       template: {
-        name: 'wineyard_estimate',
-        language: { code: 'en_IN' },
+        name: 'wineyard_customer_notification',
+        language: { code: 'en' },
         components: [
           {
             type: 'body',
             parameters: [
-              { type: 'text', parameter_name: 'estimate_number', text: data.estimateNumber },
-              { type: 'text', parameter_name: 'total_amount',    text: fmt(data.totals.total) },
-              { type: 'text', parameter_name: 'item_count',      text: String(data.items.length) },
+              { type: 'text', parameter_name: 'item_count',    text: String(data.items.length) },
+              { type: 'text', parameter_name: 'location_name', text: data.locationName ?? 'our team' },
+              { type: 'text', parameter_name: 'total_amount',  text: fmt(data.totals.total) },
             ],
           },
           {

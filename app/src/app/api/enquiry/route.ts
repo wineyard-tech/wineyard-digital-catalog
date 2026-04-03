@@ -110,29 +110,33 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', est.id)
 
-      const waResult = await sendEstimateNotification(
+      const estId = est.id
+      void sendEstimateNotification(
         session.phone,
         {
           customerName: session.contact_name,
           estimateNumber: est.estimate_number,
+          locationName: null,
           items: body.items,
           totals: { subtotal, tax, total },
           estimateUrl: est.estimate_url ?? null,
           zohoEstimateId: est.zoho_estimate_id ?? '',
         },
-      )
-      if (waResult.success) {
-        await supabase
-          .from('estimates')
-          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
-          .eq('id', est.id)
-      }
+      ).then(waResult => {
+        if (waResult.success) {
+          void supabase
+            .from('estimates')
+            .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+            .eq('id', estId)
+        }
+      }).catch(err => console.error('[enquiry] WhatsApp resend failed:', err))
 
       return NextResponse.json({
         success: true,
         estimate_number: est.estimate_number,
         estimate_id: est.public_id,
-        whatsapp_sent: waResult.success,
+        estimate_url: est.estimate_url ?? null,
+        whatsapp_sent: false,
       })
     }
     // estimate_id not found or belongs to another contact — fall through to create new
@@ -152,34 +156,36 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
 
   if (existing) {
-    // Re-send WhatsApp if not already sent for this estimate
-    let whatsappSent = existing.app_whatsapp_sent
-    if (!whatsappSent) {
-      const waResult = await sendEstimateNotification(
+    // Re-send WhatsApp async if not already sent for this estimate
+    if (!existing.app_whatsapp_sent) {
+      const existingId = existing.id
+      void sendEstimateNotification(
         session.phone,
         {
           customerName: session.contact_name,
           estimateNumber: existing.estimate_number,
+          locationName: null,
           items: existing.line_items as CartItem[],
           totals: { subtotal, tax, total },
           estimateUrl: existing.estimate_url ?? null,
           zohoEstimateId: existing.zoho_estimate_id ?? '',
         },
-      )
-      if (waResult.success) {
-        await supabase
-          .from('estimates')
-          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
-          .eq('id', existing.id)
-        whatsappSent = true
-      }
+      ).then(waResult => {
+        if (waResult.success) {
+          void supabase
+            .from('estimates')
+            .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+            .eq('id', existingId)
+        }
+      }).catch(err => console.error('[enquiry] WhatsApp duplicate resend failed:', err))
     }
 
     return NextResponse.json({
       success: true,
       estimate_number: existing.estimate_number,
       estimate_id: existing.public_id,
-      whatsapp_sent: whatsappSent,
+      estimate_url: existing.estimate_url ?? null,
+      whatsapp_sent: false,
       sync_pending: existing.zoho_sync_status === 'pending_zoho_sync',
     })
   }
@@ -297,37 +303,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
   }
 
-  // ── Send WhatsApp notification ─────────────────────────────────────────────
-  const waResult = await sendEstimateNotification(
+  // ── Fire WhatsApp notifications async — don't block the response ──────────
+  const estimateId = estimate.id
+  void sendEstimateNotification(
     session.phone,
     {
       customerName: session.contact_name,
       estimateNumber: zohoEstimateNumber,
+      locationName: nearestLocationName,
       items: body.items,
       totals: { subtotal, tax, total },
       estimateUrl: estimateUrl ?? null,
       zohoEstimateId: zohoEstimateId,
     },
-  )
+  ).then(waResult => {
+    if (waResult.success) {
+      void supabase
+        .from('estimates')
+        .update({
+          app_whatsapp_sent: true,
+          app_whatsapp_message_id: waResult.messageId ?? null,
+          whatsapp_sent: true,
+          whatsapp_sent_at: new Date().toISOString(),
+        })
+        .eq('id', estimateId)
+    } else {
+      console.error('[enquiry] WhatsApp customer send failed:', waResult.error)
+    }
+  }).catch(err => console.error('[enquiry] WhatsApp customer send error:', err))
 
-  if (waResult.success) {
-    await supabase
-      .from('estimates')
-      .update({
-        app_whatsapp_sent: true,
-        app_whatsapp_message_id: waResult.messageId ?? null,
-        whatsapp_sent: true,
-        whatsapp_sent_at: new Date().toISOString(),
-      })
-      .eq('id', estimate.id)
-  } else {
-    console.error('[enquiry] WhatsApp send failed:', waResult.error)
-  }
-
-  // ── Admin notification — awaited so serverless doesn't kill it mid-flight ──
-  // sendAdminLocationNotification has its own try/catch and plain-text fallback;
-  // this outer catch ensures any unexpected throw never breaks the response.
-  await sendAdminLocationNotification({
+  void sendAdminLocationNotification({
     locationName: nearestLocationName,
     estimateNumber: zohoEstimateNumber,
     contactName: session.contact_name,
@@ -339,11 +344,12 @@ export async function POST(request: NextRequest) {
     estimateUrl: estimateUrl ?? null,
   }).catch(err => console.error('[enquiry] admin notification failed:', err))
 
-  console.log(`[enquiry] done: ${zohoEstimateNumber} wa_customer=${waResult.success}`)
+  console.log(`[enquiry] done: ${zohoEstimateNumber} (notifications dispatched async)`)
   return NextResponse.json({
     success: true,
     estimate_number: zohoEstimateNumber,
     estimate_id: estimate.public_id as string,
-    whatsapp_sent: waResult.success,
+    estimate_url: estimateUrl ?? null,
+    whatsapp_sent: false,  // always false at response time — updated async
   })
 }
