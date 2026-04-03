@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
@@ -110,29 +110,34 @@ export async function POST(request: NextRequest) {
         })
         .eq('id', est.id)
 
-      const waResult = await sendEstimateNotification(
-        session.phone,
-        {
-          customerName: session.contact_name,
-          estimateNumber: est.estimate_number,
-          items: body.items,
-          totals: { subtotal, tax, total },
-          estimateUrl: est.estimate_url ?? null,
-          zohoEstimateId: est.zoho_estimate_id ?? '',
-        },
-      )
-      if (waResult.success) {
-        await supabase
-          .from('estimates')
-          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
-          .eq('id', est.id)
-      }
+      const estId = est.id
+      after(async () => {
+        const waResult = await sendEstimateNotification(
+          session.phone,
+          {
+            customerName: session.contact_name,
+            estimateNumber: est.estimate_number,
+            locationName: null,
+            items: body.items,
+            totals: { subtotal, tax, total },
+            estimateUrl: est.estimate_url ?? null,
+            zohoEstimateId: est.zoho_estimate_id ?? '',
+          },
+        ).catch(err => { console.error('[enquiry] WhatsApp resend failed:', err); return null })
+        if (waResult?.success) {
+          await supabase
+            .from('estimates')
+            .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+            .eq('id', estId)
+        }
+      })
 
       return NextResponse.json({
         success: true,
         estimate_number: est.estimate_number,
         estimate_id: est.public_id,
-        whatsapp_sent: waResult.success,
+        estimate_url: est.estimate_url ?? null,
+        whatsapp_sent: false,
       })
     }
     // estimate_id not found or belongs to another contact — fall through to create new
@@ -152,34 +157,37 @@ export async function POST(request: NextRequest) {
     .maybeSingle()
 
   if (existing) {
-    // Re-send WhatsApp if not already sent for this estimate
-    let whatsappSent = existing.app_whatsapp_sent
-    if (!whatsappSent) {
-      const waResult = await sendEstimateNotification(
-        session.phone,
-        {
-          customerName: session.contact_name,
-          estimateNumber: existing.estimate_number,
-          items: existing.line_items as CartItem[],
-          totals: { subtotal, tax, total },
-          estimateUrl: existing.estimate_url ?? null,
-          zohoEstimateId: existing.zoho_estimate_id ?? '',
-        },
-      )
-      if (waResult.success) {
-        await supabase
-          .from('estimates')
-          .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
-          .eq('id', existing.id)
-        whatsappSent = true
-      }
+    // Re-send WhatsApp async if not already sent for this estimate
+    if (!existing.app_whatsapp_sent) {
+      const existingId = existing.id
+      after(async () => {
+        const waResult = await sendEstimateNotification(
+          session.phone,
+          {
+            customerName: session.contact_name,
+            estimateNumber: existing.estimate_number,
+            locationName: null,
+            items: existing.line_items as CartItem[],
+            totals: { subtotal, tax, total },
+            estimateUrl: existing.estimate_url ?? null,
+            zohoEstimateId: existing.zoho_estimate_id ?? '',
+          },
+        ).catch(err => { console.error('[enquiry] WhatsApp duplicate resend failed:', err); return null })
+        if (waResult?.success) {
+          await supabase
+            .from('estimates')
+            .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
+            .eq('id', existingId)
+        }
+      })
     }
 
     return NextResponse.json({
       success: true,
       estimate_number: existing.estimate_number,
       estimate_id: existing.public_id,
-      whatsapp_sent: whatsappSent,
+      estimate_url: existing.estimate_url ?? null,
+      whatsapp_sent: false,
       sync_pending: existing.zoho_sync_status === 'pending_zoho_sync',
     })
   }
@@ -202,11 +210,12 @@ export async function POST(request: NextRequest) {
   // other clients. Warehouses without geocoords are excluded automatically.
   let nearestLocationId: string | null = null
   let nearestLocationName: string | null = null
+  let nearestLocationPhone: string | null = null
   if (body.user_lat != null && body.user_lng != null &&
       isFinite(body.user_lat) && isFinite(body.user_lng)) {
     const { data: locs } = await supabase
       .from('locations')
-      .select('zoho_location_id, location_name, latitude, longitude')
+      .select('zoho_location_id, location_name, phone, latitude, longitude')
       .not('latitude', 'is', null)
       .not('longitude', 'is', null)
       .eq('status', 'active')
@@ -215,6 +224,7 @@ export async function POST(request: NextRequest) {
       const geocoded: GeocodedLocation[] = (locs as Array<{
         zoho_location_id: string
         location_name: string
+        phone: string | null
         latitude: number
         longitude: number
       }>).map(l => ({
@@ -223,7 +233,9 @@ export async function POST(request: NextRequest) {
         longitude: l.longitude,
       }))
       nearestLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
-      nearestLocationName = locs.find(l => l.zoho_location_id === nearestLocationId)?.location_name ?? null
+      const nearest = locs.find(l => l.zoho_location_id === nearestLocationId)
+      nearestLocationName = nearest?.location_name ?? null
+      nearestLocationPhone = nearest?.phone ?? null
     }
   }
 
@@ -297,49 +309,56 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
   }
 
-  // ── Send WhatsApp notification ─────────────────────────────────────────────
-  const waResult = await sendEstimateNotification(
-    session.phone,
-    {
-      customerName: session.contact_name,
+  // ── Fire WhatsApp notifications after response — after() keeps function alive ─
+  const estimateId = estimate.id
+  after(async () => {
+    const waResult = await sendEstimateNotification(
+      session.phone,
+      {
+        customerName: session.contact_name,
+        estimateNumber: zohoEstimateNumber,
+        locationName: nearestLocationName,
+        items: body.items,
+        totals: { subtotal, tax, total },
+        estimateUrl: estimateUrl ?? null,
+        zohoEstimateId: zohoEstimateId,
+      },
+    ).catch(err => { console.error('[enquiry] WhatsApp customer send error:', err); return null })
+
+    if (waResult?.success) {
+      await supabase
+        .from('estimates')
+        .update({
+          app_whatsapp_sent: true,
+          app_whatsapp_message_id: waResult.messageId ?? null,
+          whatsapp_sent: true,
+          whatsapp_sent_at: new Date().toISOString(),
+        })
+        .eq('id', estimateId)
+    } else if (waResult) {
+      console.error('[enquiry] WhatsApp customer send failed:', waResult.error)
+    }
+
+    await sendAdminLocationNotification({
+      locationName: nearestLocationName,
+      locationPhone: nearestLocationPhone,
       estimateNumber: zohoEstimateNumber,
-      items: body.items,
-      totals: { subtotal, tax, total },
+      contactName: session.contact_name,
+      contactPhone: session.phone,
+      contactLocation,
+      total,
+      itemCount: body.items.length,
+      zohoEstimateId,
       estimateUrl: estimateUrl ?? null,
-      zohoEstimateId: zohoEstimateId,
-    },
-  )
+    }).catch(err => console.error('[enquiry] admin notification failed:', err))
+  })
 
-  if (waResult.success) {
-    await supabase
-      .from('estimates')
-      .update({
-        app_whatsapp_sent: true,
-        app_whatsapp_message_id: waResult.messageId ?? null,
-        whatsapp_sent: true,
-        whatsapp_sent_at: new Date().toISOString(),
-      })
-      .eq('id', estimate.id)
-  } else {
-    console.error('[enquiry] WhatsApp send failed:', waResult.error)
-  }
-
-  // ── Admin notification — best-effort, never blocks response ─────────────
-  sendAdminLocationNotification({
-    locationName: nearestLocationName,
-    estimateNumber: zohoEstimateNumber,
-    contactName: session.contact_name,
-    contactPhone: session.phone,
-    contactLocation,
-    total,
-    itemCount: body.items.length,
-    zohoEstimateId,
-  }).catch(err => console.error('[enquiry] admin notification failed:', err))
-
+  console.log(`[enquiry] done: ${zohoEstimateNumber} (notifications dispatched async)`)
   return NextResponse.json({
     success: true,
     estimate_number: zohoEstimateNumber,
     estimate_id: estimate.public_id as string,
-    whatsapp_sent: waResult.success,
+    estimate_url: estimateUrl ?? null,
+    whatsapp_sent: false,  // always false at response time — updated async
   })
 }

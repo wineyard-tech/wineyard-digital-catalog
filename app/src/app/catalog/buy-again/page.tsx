@@ -100,19 +100,6 @@ export default function BuyAgainPage() {
     fetch('/api/auth/logout', { method: 'POST' }).finally(() => router.push('/auth/login'))
   }
 
-  // Category display_order lookup
-  const [categoryOrder, setCategoryOrder] = useState<Map<string, number>>(new Map())
-  useEffect(() => {
-    fetch('/api/categories')
-      .then(r => r.ok ? r.json() : { categories: [] })
-      .then((d: { categories: { category_name: string; display_order: number }[] }) => {
-        const m = new Map<string, number>()
-        for (const c of d.categories ?? []) m.set(c.category_name, c.display_order)
-        setCategoryOrder(m)
-      })
-      .catch(() => {})
-  }, [])
-
   // Buy-again data
   const [products, setProducts] = useState<PurchasedProduct[]>([])
   const [hasOrders, setHasOrders] = useState(false)
@@ -120,15 +107,25 @@ export default function BuyAgainPage() {
   const [dataLoading, setDataLoading] = useState(true)
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [searchQuery, setSearchQuery] = useState('')
+  const [categoryOrder, setCategoryOrder] = useState<Map<string, number>>(new Map())
 
   // Bestsellers (always shown in the empty/guest state)
   const [bestsellers, setBestsellers] = useState<CatalogItem[]>([])
 
   const fetchData = useCallback(async () => {
-    const [orderRes, bestRes] = await Promise.allSettled([
+    const [orderRes, bestRes, catRes] = await Promise.allSettled([
       fetch('/api/buy-again'),
       fetch('/api/bestsellers'),
+      fetch('/api/categories'),
     ])
+
+    // Category display_order — fetched together so groups are sorted on first render
+    if (catRes.status === 'fulfilled' && catRes.value.ok) {
+      const cd = await catRes.value.json() as { categories: { category_name: string; display_order: number }[] }
+      const m = new Map<string, number>()
+      for (const c of cd.categories ?? []) m.set(c.category_name, c.display_order)
+      setCategoryOrder(m)
+    }
 
     // Bestsellers (public — always available)
     if (bestRes.status === 'fulfilled' && bestRes.value.ok) {

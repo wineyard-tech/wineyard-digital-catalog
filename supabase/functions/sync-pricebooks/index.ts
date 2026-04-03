@@ -48,7 +48,7 @@ serve(async (req) => {
 
     for (const pb of pricebookList) {
       const pricebookId: string = pb.pricebook_id
-      const pricebookName: string = pb.pricebook_name ?? `Pricebook ${pricebookId}`
+      const pricebookName: string = pb.pricebook_name ?? pb.name ?? `Pricebook ${pricebookId}`
 
       // ── Step 2: Upsert pricebook metadata ─────────────────────────────────
       const { error: catalogErr } = await supabase
@@ -67,17 +67,29 @@ serve(async (req) => {
       }
       pricebooksUpserted++
 
-      // ── Step 3: Fetch full pricebook with item prices ──────────────────────
-      let pbDetail: any
-      try {
-        pbDetail = await zohoGet(`/pricebooks/${pricebookId}`, token, ORG_ID)
-      } catch (e) {
-        errors.push(`Pricebook ${pricebookId} detail fetch: ${String(e)}`)
-        continue
+      // ── Step 3: Fetch all pricebook_items pages for this pricebook ────────────
+      const pbItems: Array<{ item_id: string; pricebook_rate?: number; rate?: number }> = []
+      let pbPage = 1
+      let pbFailed = false
+      while (true) {
+        let pbDetail: any
+        try {
+          pbDetail = await zohoGet(`/pricebooks/${pricebookId}`, token, ORG_ID, { page: pbPage, per_page: 200 })
+        } catch (e) {
+          errors.push(`Pricebook ${pricebookId} detail fetch p${pbPage}: ${String(e)}`)
+          pbFailed = true
+          break
+        }
+        const pageItems: Array<{ item_id: string; pricebook_rate?: number; rate?: number }> =
+          pbDetail?.pricebook?.pricebook_items ?? []
+        pbItems.push(...pageItems)
+        // Dual-condition: Zoho's has_more_page can be wrong when items list is filtered.
+        // Only stop when both has_more_page is false AND we got a partial page.
+        if (pageItems.length === 0) break
+        if (!pbDetail?.page_context?.has_more_page && pageItems.length < 200) break
+        pbPage++
       }
-
-      const pbItems: Array<{ item_id: string; rate: number }> =
-        pbDetail?.pricebook?.items ?? []
+      if (pbFailed) continue
 
       if (pbItems.length === 0) continue
 
@@ -123,7 +135,7 @@ serve(async (req) => {
         .map(pi => ({
           zoho_pricebook_id: pricebookId,
           zoho_item_id: pi.item_id,
-          custom_rate: dec(pi.rate) ?? 0,
+          custom_rate: dec(pi.pricebook_rate ?? pi.rate) ?? 0,
           updated_at: new Date().toISOString(),
         }))
         // Only insert rows where the item now exists (stubs included)

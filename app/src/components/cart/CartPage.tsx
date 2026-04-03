@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
 import { useCart } from './CartContext'
@@ -210,20 +209,30 @@ export default function CartPage() {
           </p>
         )}
         <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
-          {quoteResult.whatsapp_sent ? 'Check your WhatsApp — your quote is on its way.' : 'Quote saved. WhatsApp delivery may be delayed.'}
+          Our team will contact you within 1 hour. Check WhatsApp for updates.
         </p>
-        <Link
-          href={`/catalog/orders/enquiry/${quoteResult.estimate_id}`}
-          style={{ display: 'inline-block', background: '#0066CC', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, marginBottom: 12, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
+        {quoteResult.estimate_url && (
+          <a
+            href={quoteResult.estimate_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'block', marginBottom: 12, width: '100%', maxWidth: 280, background: '#EFF6FF', color: '#1D4ED8', border: '1.5px solid #BFDBFE', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
+          >
+            Open Estimate ↗
+          </a>
+        )}
+        <button
+          onClick={() => router.push(`/catalog/orders/enquiry/${quoteResult.estimate_id}`)}
+          style={{ background: '#059669', color: '#FFFFFF', border: 'none', borderRadius: 10, padding: '14px 32px', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginBottom: 12, width: '100%', maxWidth: 280 }}
         >
-          View Quote
-        </Link>
-        <Link
-          href="/catalog"
-          style={{ display: 'inline-block', background: '#059669', color: '#FFFFFF', textDecoration: 'none', borderRadius: 10, padding: '12px 32px', fontSize: 15, fontWeight: 700, width: '100%', maxWidth: 280, boxSizing: 'border-box' }}
+          View Estimate
+        </button>
+        <button
+          onClick={() => router.push('/catalog')}
+          style={{ background: 'none', border: '1.5px solid #E5E7EB', color: '#6B7280', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', width: '100%', maxWidth: 280 }}
         >
-          Back to Catalog
-        </Link>
+          Go to Catalog
+        </button>
       </div>
     )
   }
@@ -373,11 +382,11 @@ export default function CartPage() {
           <MapPin size={16} color={hasLocation ? '#0066CC' : '#F97316'} style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
           <div style={{ flex: 1 }}>
             <p style={{ margin: '0 0 2px', fontSize: 13, fontWeight: 600, color: hasLocation ? '#1A1A2E' : '#EA580C' }}>
-              {hasLocation ? `Delivering to ${deliveryArea}` : 'Set delivery location'}
+              {hasLocation ? `${deliveryArea}` : 'Set delivery location'}
             </p>
             <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
               {hasLocation
-                ? (warehouseName ? `From ${warehouseName}` : 'From nearest Wine Yard warehouse')
+                ? (warehouseName ? `From Wine Yard ${warehouseName}` : 'From nearest Wine Yard warehouse')
                 : 'Required before getting a quote — tap to set'}
             </p>
           </div>

@@ -137,15 +137,30 @@ export async function createEstimate(
   const token = await getAccessToken()
   const orgId = process.env.ZOHO_ORG_ID!
 
+  // Compute GST for the estimate notes — shown informatively on the Zoho portal document.
+  // tax_treatment: 'out_of_scope' keeps Zoho Total = Subtotal (no tax added to total),
+  // while the notes field surfaces the 18% GST breakdown that customers need to see.
+  const lineSubtotal = lineItems.reduce((sum, item) => sum + item.rate * item.quantity, 0)
+  const gstAmount = Math.round(lineSubtotal * 0.18)
+  const gstNote =
+    `GST @18% (CGST 9% + SGST 9%): ₹${gstAmount.toLocaleString('en-IN')} — applicable on final invoice`
+  const notesText = [gstNote, options?.notes].filter(Boolean).join('\n')
+
   const body = {
     customer_id: contactId,
+    // tax_treatment: 'out_of_scope' prevents Zoho org-level default taxes from inflating
+    // the estimate total — Total = Subtotal in the Zoho portal, matching the app.
+    // GST info is surfaced via the notes field above instead of Zoho's tax engine.
+    is_inclusive_tax: false,
+    tax_treatment: 'out_of_scope',
     line_items: lineItems.map((item) => ({
       item_id: item.zoho_item_id,
       name: item.item_name,
       quantity: item.quantity,
       rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
+      tax_id: '',        // belt-and-suspenders: clear item-level tax override
     })),
-    ...(options?.notes ? { notes: options.notes } : {}),
+    notes: notesText,
     ...(options?.locationId ? { location_id: options.locationId } : {}),
   }
 

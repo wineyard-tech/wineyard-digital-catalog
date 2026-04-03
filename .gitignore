@@ -12,6 +12,10 @@ supabase/.branches/
 supabase/.temp/
 supabase/functions/.env
 
+# Data
+data/*
+data/**/*
+
 # OS
 .DS_Store
 Thumbs.db
@@ -24,5 +28,6 @@ types/database.generated.ts
 node_modules/
 .worktrees/**/.env.local
 .claude/worktrees/**/.env.local
+.claude/worktrees/**/.claude/
 .vercel
 .env*.local

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, use } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, AlertTriangle, FileText } from 'lucide-react'
 import { LineItemRow } from '@/components/orders/LineItemRow'
 import { useCart } from '@/components/cart/CartContext'
 import type { EnquiryDetail } from '@/types/catalog'
@@ -243,7 +243,7 @@ export default function EnquiryDetailPage({
       {/* Line items */}
       <div style={{ padding: '0 16px' }}>
         {data.line_items.map((li) => (
-          <LineItemRow key={li.zoho_item_id} item={li} />
+          <LineItemRow key={li.zoho_item_id} item={li} showAddToCart={false} />
         ))}
       </div>
 
@@ -259,9 +259,28 @@ export default function EnquiryDetailPage({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>Total</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.total)}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.subtotal)}</span>
         </div>
       </div>
+
+      {/* Estimate PDF link */}
+      {data.estimate_url && (
+        <div style={{ margin: '12px 16px 0', textAlign: 'center' }}>
+          <a
+            href={data.estimate_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              fontSize: 13, fontWeight: 600, color: '#0066CC',
+              textDecoration: 'none',
+            }}
+          >
+            <FileText size={15} />
+            Estimate PDF
+          </a>
+        </div>
+      )}
 
       {/* Fixed CTA */}
       <div style={{

@@ -38,7 +38,7 @@ export async function GET(
 
   const { data: estimate, error } = await supabase
     .from('estimates')
-    .select('public_id, estimate_number, date, created_at, total, subtotal, tax_total, line_items, status, converted_to_salesorder_id')
+    .select('public_id, estimate_number, date, created_at, total, subtotal, tax_total, line_items, status, converted_to_salesorder_id, estimate_url')
     .eq('public_id', id)
     .eq('zoho_contact_id', session.zoho_contact_id)
     .maybeSingle()
@@ -51,19 +51,22 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // Webhook-synced line items use Zoho's `item_id`; app-created line items use `zoho_item_id`.
+  // Support both by treating `item_id` as a fallback.
+  type RawLineItem = { zoho_item_id?: string; item_id?: string; item_name?: string; name?: string; sku?: string; quantity: number; rate: number; tax_percentage: number; line_total?: number }
   const rawLineItems = Array.isArray(estimate.line_items)
-    ? (estimate.line_items as { zoho_item_id: string; item_name: string; sku: string; quantity: number; rate: number; tax_percentage: number; line_total: number }[])
+    ? (estimate.line_items as RawLineItem[])
     : []
 
   // Enrich line items with live stock data from items table
-  const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id).filter(Boolean)
+  const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id || li.item_id).filter(Boolean) as string[]
 
-  let stockMap = new Map<string, { available_stock: number | null; image_url: string | null }>()
+  let stockMap = new Map<string, { available_stock: number | null; image_url: string | null; item_name: string | null; sku: string | null }>()
 
   if (zohoItemIds.length > 0) {
     const { data: itemRows } = await supabase
       .from('items')
-      .select('zoho_item_id, available_stock, image_urls')
+      .select('zoho_item_id, available_stock, image_urls, item_name, sku')
       .in('zoho_item_id', zohoItemIds)
 
     for (const row of itemRows ?? []) {
@@ -73,12 +76,15 @@ export async function GET(
       stockMap.set(row.zoho_item_id, {
         available_stock: row.available_stock ?? null,
         image_url: imageUrl,
+        item_name: row.item_name ?? null,
+        sku: row.sku ?? null,
       })
     }
   }
 
   const lineItems: EnquiryLineItemDetail[] = rawLineItems.map((li) => {
-    const stock = stockMap.get(li.zoho_item_id)
+    const resolvedId = li.zoho_item_id || li.item_id || ''
+    const stock = stockMap.get(resolvedId)
     const available_stock = stock?.available_stock ?? null
 
     let stock_status: EnquiryLineItemDetail['stock_status'] = 'unknown'
@@ -89,33 +95,41 @@ export async function GET(
     }
 
     return {
-      zoho_item_id: li.zoho_item_id,
-      item_name: li.item_name,
-      sku: li.sku,
+      zoho_item_id: resolvedId,
+      // Zoho webhook payloads use 'name' not 'item_name'; fall back to items table as authoritative source
+      item_name: li.item_name || li.name || stock?.item_name || '',
+      sku: li.sku || stock?.sku || '',
       quantity: li.quantity,
       rate: li.rate,
       tax_percentage: li.tax_percentage,
-      line_total: li.line_total,
+      line_total: (li.line_total ?? (li.rate * li.quantity)) || 0,
       image_url: stock?.image_url ?? null,
       available_stock,
       stock_status,
     }
   })
 
+  const subtotalNum = Number(estimate.subtotal ?? 0)
+  // Derive tax_total from subtotal for old records where it was stored as 0.
+  // All new estimates have tax_total = round(subtotal × 0.18) written at creation time.
+  const storedTaxTotal = Number(estimate.tax_total ?? 0)
+  const taxTotal = storedTaxTotal > 0 ? storedTaxTotal : Math.round(subtotalNum * 0.18)
+
   const detail: EnquiryDetail = {
     id: estimate.public_id as string,
     doc_number: estimate.estimate_number,
     date: estimate.date ?? estimate.created_at?.slice(0, 10) ?? '',
     // PostgREST returns DECIMAL columns as strings — coerce to number for fmt()
-    total: Number(estimate.total),
-    subtotal: Number(estimate.subtotal ?? 0),
-    tax_total: Number(estimate.tax_total ?? 0),
+    total: subtotalNum,   // Total = Subtotal; tax is decorative, not added to total
+    subtotal: subtotalNum,
+    tax_total: taxTotal,
     status: computeStatus({
       status: estimate.status,
       created_at: estimate.created_at,
       converted_to_salesorder_id: estimate.converted_to_salesorder_id,
     }),
     estimate_id: estimate.public_id as string,
+    estimate_url: (estimate as unknown as { estimate_url?: string | null }).estimate_url ?? null,
     line_items: lineItems,
   }
 
