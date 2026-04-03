@@ -210,11 +210,12 @@ export async function POST(request: NextRequest) {
   // other clients. Warehouses without geocoords are excluded automatically.
   let nearestLocationId: string | null = null
   let nearestLocationName: string | null = null
+  let nearestLocationPhone: string | null = null
   if (body.user_lat != null && body.user_lng != null &&
       isFinite(body.user_lat) && isFinite(body.user_lng)) {
     const { data: locs } = await supabase
       .from('locations')
-      .select('zoho_location_id, location_name, latitude, longitude')
+      .select('zoho_location_id, location_name, phone, latitude, longitude')
       .not('latitude', 'is', null)
       .not('longitude', 'is', null)
       .eq('status', 'active')
@@ -223,6 +224,7 @@ export async function POST(request: NextRequest) {
       const geocoded: GeocodedLocation[] = (locs as Array<{
         zoho_location_id: string
         location_name: string
+        phone: string | null
         latitude: number
         longitude: number
       }>).map(l => ({
@@ -231,7 +233,9 @@ export async function POST(request: NextRequest) {
         longitude: l.longitude,
       }))
       nearestLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
-      nearestLocationName = locs.find(l => l.zoho_location_id === nearestLocationId)?.location_name ?? null
+      const nearest = locs.find(l => l.zoho_location_id === nearestLocationId)
+      nearestLocationName = nearest?.location_name ?? null
+      nearestLocationPhone = nearest?.phone ?? null
     }
   }
 
@@ -337,6 +341,7 @@ export async function POST(request: NextRequest) {
 
     await sendAdminLocationNotification({
       locationName: nearestLocationName,
+      locationPhone: nearestLocationPhone,
       estimateNumber: zohoEstimateNumber,
       contactName: session.contact_name,
       contactPhone: session.phone,
