@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
@@ -111,25 +111,26 @@ export async function POST(request: NextRequest) {
         .eq('id', est.id)
 
       const estId = est.id
-      void sendEstimateNotification(
-        session.phone,
-        {
-          customerName: session.contact_name,
-          estimateNumber: est.estimate_number,
-          locationName: null,
-          items: body.items,
-          totals: { subtotal, tax, total },
-          estimateUrl: est.estimate_url ?? null,
-          zohoEstimateId: est.zoho_estimate_id ?? '',
-        },
-      ).then(waResult => {
-        if (waResult.success) {
-          void supabase
+      after(async () => {
+        const waResult = await sendEstimateNotification(
+          session.phone,
+          {
+            customerName: session.contact_name,
+            estimateNumber: est.estimate_number,
+            locationName: null,
+            items: body.items,
+            totals: { subtotal, tax, total },
+            estimateUrl: est.estimate_url ?? null,
+            zohoEstimateId: est.zoho_estimate_id ?? '',
+          },
+        ).catch(err => { console.error('[enquiry] WhatsApp resend failed:', err); return null })
+        if (waResult?.success) {
+          await supabase
             .from('estimates')
             .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
             .eq('id', estId)
         }
-      }).catch(err => console.error('[enquiry] WhatsApp resend failed:', err))
+      })
 
       return NextResponse.json({
         success: true,
@@ -159,25 +160,26 @@ export async function POST(request: NextRequest) {
     // Re-send WhatsApp async if not already sent for this estimate
     if (!existing.app_whatsapp_sent) {
       const existingId = existing.id
-      void sendEstimateNotification(
-        session.phone,
-        {
-          customerName: session.contact_name,
-          estimateNumber: existing.estimate_number,
-          locationName: null,
-          items: existing.line_items as CartItem[],
-          totals: { subtotal, tax, total },
-          estimateUrl: existing.estimate_url ?? null,
-          zohoEstimateId: existing.zoho_estimate_id ?? '',
-        },
-      ).then(waResult => {
-        if (waResult.success) {
-          void supabase
+      after(async () => {
+        const waResult = await sendEstimateNotification(
+          session.phone,
+          {
+            customerName: session.contact_name,
+            estimateNumber: existing.estimate_number,
+            locationName: null,
+            items: existing.line_items as CartItem[],
+            totals: { subtotal, tax, total },
+            estimateUrl: existing.estimate_url ?? null,
+            zohoEstimateId: existing.zoho_estimate_id ?? '',
+          },
+        ).catch(err => { console.error('[enquiry] WhatsApp duplicate resend failed:', err); return null })
+        if (waResult?.success) {
+          await supabase
             .from('estimates')
             .update({ app_whatsapp_sent: true, app_whatsapp_message_id: waResult.messageId ?? null })
             .eq('id', existingId)
         }
-      }).catch(err => console.error('[enquiry] WhatsApp duplicate resend failed:', err))
+      })
     }
 
     return NextResponse.json({
@@ -303,22 +305,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
   }
 
-  // ── Fire WhatsApp notifications async — don't block the response ──────────
+  // ── Fire WhatsApp notifications after response — after() keeps function alive ─
   const estimateId = estimate.id
-  void sendEstimateNotification(
-    session.phone,
-    {
-      customerName: session.contact_name,
-      estimateNumber: zohoEstimateNumber,
-      locationName: nearestLocationName,
-      items: body.items,
-      totals: { subtotal, tax, total },
-      estimateUrl: estimateUrl ?? null,
-      zohoEstimateId: zohoEstimateId,
-    },
-  ).then(waResult => {
-    if (waResult.success) {
-      void supabase
+  after(async () => {
+    const waResult = await sendEstimateNotification(
+      session.phone,
+      {
+        customerName: session.contact_name,
+        estimateNumber: zohoEstimateNumber,
+        locationName: nearestLocationName,
+        items: body.items,
+        totals: { subtotal, tax, total },
+        estimateUrl: estimateUrl ?? null,
+        zohoEstimateId: zohoEstimateId,
+      },
+    ).catch(err => { console.error('[enquiry] WhatsApp customer send error:', err); return null })
+
+    if (waResult?.success) {
+      await supabase
         .from('estimates')
         .update({
           app_whatsapp_sent: true,
@@ -327,22 +331,22 @@ export async function POST(request: NextRequest) {
           whatsapp_sent_at: new Date().toISOString(),
         })
         .eq('id', estimateId)
-    } else {
+    } else if (waResult) {
       console.error('[enquiry] WhatsApp customer send failed:', waResult.error)
     }
-  }).catch(err => console.error('[enquiry] WhatsApp customer send error:', err))
 
-  void sendAdminLocationNotification({
-    locationName: nearestLocationName,
-    estimateNumber: zohoEstimateNumber,
-    contactName: session.contact_name,
-    contactPhone: session.phone,
-    contactLocation,
-    total,
-    itemCount: body.items.length,
-    zohoEstimateId,
-    estimateUrl: estimateUrl ?? null,
-  }).catch(err => console.error('[enquiry] admin notification failed:', err))
+    await sendAdminLocationNotification({
+      locationName: nearestLocationName,
+      estimateNumber: zohoEstimateNumber,
+      contactName: session.contact_name,
+      contactPhone: session.phone,
+      contactLocation,
+      total,
+      itemCount: body.items.length,
+      zohoEstimateId,
+      estimateUrl: estimateUrl ?? null,
+    }).catch(err => console.error('[enquiry] admin notification failed:', err))
+  })
 
   console.log(`[enquiry] done: ${zohoEstimateNumber} (notifications dispatched async)`)
   return NextResponse.json({
