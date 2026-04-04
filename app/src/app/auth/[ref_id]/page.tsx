@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
-import { createClient } from '../../../lib/supabase/server'
+import { validateWhatsAppAuthRef } from '@/lib/auth/server-lookups'
 import OtpForm from '../../../components/auth/OtpForm'
 
 interface AuthPageProps {
@@ -9,18 +9,9 @@ interface AuthPageProps {
 
 export default async function AuthPage({ params }: AuthPageProps) {
   const { ref_id } = await params
-  const supabase = await createClient()
 
-  // Validate ref_id — must be unused, not expired
-  const { data: authRequest } = await supabase
-    .from('auth_requests')
-    .select('ref_id, phone')
-    .eq('ref_id', ref_id)
-    .eq('used', false)
-    .gt('ref_expires_at', new Date().toISOString())
-    .single()
-
-  if (!authRequest) {
+  const ok = await validateWhatsAppAuthRef(ref_id)
+  if (!ok) {
     redirect('/auth/expired')
   }
 

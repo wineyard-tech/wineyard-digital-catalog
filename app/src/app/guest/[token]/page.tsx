@@ -1,5 +1,8 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '../../../lib/supabase/server'
+import {
+  validateGuestSessionToken,
+  incrementGuestPageViewsFireAndForget,
+} from '@/lib/auth/server-lookups'
 import GuestBanner from '../../../components/auth/GuestBanner'
 import GuestCatalogClient from './GuestCatalogClient'
 
@@ -22,21 +25,13 @@ async function fetchGuestCatalog() {
 
 export default async function GuestPage({ params }: GuestPageProps) {
   const { token } = await params
-  const supabase = await createClient()
 
-  const { data: guestSession } = await supabase
-    .from('guest_sessions')
-    .select('id')
-    .eq('token', token)
-    .gt('expires_at', new Date().toISOString())
-    .single()
-
-  if (!guestSession) {
+  const ok = await validateGuestSessionToken(token)
+  if (!ok) {
     redirect('/auth/expired')
   }
 
-  // Increment page_views (fire and forget — ignore errors)
-  supabase.rpc('increment_guest_page_views', { session_token: token }).then(() => {})
+  incrementGuestPageViewsFireAndForget(token)
 
   const initialData = await fetchGuestCatalog()
 

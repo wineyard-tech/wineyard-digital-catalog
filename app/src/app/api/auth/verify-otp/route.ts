@@ -32,7 +32,6 @@ export async function POST(request: NextRequest) {
   const userAgent = request.headers.get('user-agent')
   const now = new Date().toISOString()
 
-  // ── Fetch the most recent active OTP session ───────────────────────────────
   const { data: otpSession } = await supabase
     .from('otp_sessions')
     .select('id, otp_hash, attempts')
@@ -50,13 +49,98 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── Increment attempt counter before checking ─────────────────────────────
-  const newAttempts = otpSession.attempts + 1
-  await supabase.from('otp_sessions').update({ attempts: newAttempts }).eq('id', otpSession.id)
+  const isCorrect = await verifyOTP(otpCode, otpSession.otp_hash)
 
-  if (newAttempts > MAX_ATTEMPTS) {
-    // Too many guesses — invalidate this session
-    await supabase.from('otp_sessions').update({ verified: true }).eq('id', otpSession.id)
+  if (isCorrect) {
+    const { data: marked } = await supabase
+      .from('otp_sessions')
+      .update({ verified: true })
+      .eq('id', otpSession.id)
+      .eq('verified', false)
+      .select('id')
+      .maybeSingle()
+
+    if (!marked) {
+      return NextResponse.json(
+        { success: false, error: 'OTP expired or not found. Please request a new OTP.' },
+        { status: 401 },
+      )
+    }
+
+    const { data: contact } = await supabase
+      .from('contacts')
+      .select('zoho_contact_id, contact_name, company_name, pricebook_id')
+      .eq('phone', phone)
+      .maybeSingle()
+
+    if (!contact) {
+      console.error('[verify-otp] contact not found after OTP success for phone:', phone)
+      return NextResponse.json({ error: 'Contact not found.' }, { status: 500 })
+    }
+
+    const sessionExpiry = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString()
+    const { data: session, error: sessionError } = await supabase
+      .from('sessions')
+      .insert({
+        zoho_contact_id: contact.zoho_contact_id,
+        phone,
+        ip_address: ip,
+        user_agent: userAgent,
+        expires_at: sessionExpiry,
+      })
+      .select('token')
+      .single()
+
+    if (sessionError || !session) {
+      console.error('[verify-otp] session insert error:', sessionError)
+      return NextResponse.json({ error: 'Internal error creating session.' }, { status: 500 })
+    }
+
+    await supabase.from('auth_attempts').insert({
+      phone,
+      attempt_type: 'registered_success',
+      ip_address: ip,
+      user_agent: userAgent,
+      metadata: { zoho_contact_id: contact.zoho_contact_id },
+    })
+
+    const response = NextResponse.json(
+      {
+        success: true,
+        user: {
+          zoho_contact_id: contact.zoho_contact_id,
+          contact_name: contact.contact_name,
+          company_name: contact.company_name ?? null,
+          phone,
+          pricebook_id: contact.pricebook_id ?? null,
+        },
+      },
+      { status: 200 },
+    )
+
+    setSessionCookie(response, session.token)
+    return response
+  }
+
+  const newAttempts = otpSession.attempts + 1
+  const burn = newAttempts > MAX_ATTEMPTS
+
+  const { data: bumped } = await supabase
+    .from('otp_sessions')
+    .update({
+      attempts: newAttempts,
+      ...(burn ? { verified: true } : {}),
+    })
+    .eq('id', otpSession.id)
+    .eq('attempts', otpSession.attempts)
+    .select('attempts')
+    .maybeSingle()
+
+  if (!bumped) {
+    return NextResponse.json({ success: false, error: 'Please try again.' }, { status: 409 })
+  }
+
+  if (burn) {
     await supabase.from('auth_attempts').insert({
       phone,
       attempt_type: 'registered_failed',
@@ -74,78 +158,17 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── Verify bcrypt hash ────────────────────────────────────────────────────
-  const isCorrect = await verifyOTP(otpCode, otpSession.otp_hash)
-
-  if (!isCorrect) {
-    const attemptsLeft = MAX_ATTEMPTS - newAttempts
-    await supabase.from('auth_attempts').insert({
-      phone,
-      attempt_type: 'registered_failed',
-      ip_address: ip,
-      user_agent: userAgent,
-      metadata: { attempts_left: attemptsLeft },
-    })
-    return NextResponse.json(
-      { success: false, error: 'Incorrect OTP.', attemptsLeft },
-      { status: 401 },
-    )
-  }
-
-  // ── OTP correct: mark verified and create session ─────────────────────────
-  await supabase.from('otp_sessions').update({ verified: true }).eq('id', otpSession.id)
-
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('zoho_contact_id, contact_name, company_name, pricebook_id')
-    .eq('phone', phone)
-    .maybeSingle()
-
-  if (!contact) {
-    console.error('[verify-otp] contact not found after OTP success for phone:', phone)
-    return NextResponse.json({ error: 'Contact not found.' }, { status: 500 })
-  }
-
-  const sessionExpiry = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString()
-  const { data: session, error: sessionError } = await supabase
-    .from('sessions')
-    .insert({
-      zoho_contact_id: contact.zoho_contact_id,
-      phone,
-      ip_address: ip,
-      user_agent: userAgent,
-      expires_at: sessionExpiry,
-    })
-    .select('token')
-    .single()
-
-  if (sessionError || !session) {
-    console.error('[verify-otp] session insert error:', sessionError)
-    return NextResponse.json({ error: 'Internal error creating session.' }, { status: 500 })
-  }
-
+  const attemptsLeft = MAX_ATTEMPTS - newAttempts
   await supabase.from('auth_attempts').insert({
     phone,
-    attempt_type: 'registered_success',
+    attempt_type: 'registered_failed',
     ip_address: ip,
     user_agent: userAgent,
-    metadata: { zoho_contact_id: contact.zoho_contact_id },
+    metadata: { attempts_left: attemptsLeft },
   })
 
-  const response = NextResponse.json(
-    {
-      success: true,
-      user: {
-        zoho_contact_id: contact.zoho_contact_id,
-        contact_name: contact.contact_name,
-        company_name: contact.company_name ?? null,
-        phone,
-        pricebook_id: contact.pricebook_id ?? null,
-      },
-    },
-    { status: 200 },
+  return NextResponse.json(
+    { success: false, error: 'Incorrect OTP.', attemptsLeft },
+    { status: 401 },
   )
-
-  setSessionCookie(response, session.token)
-  return response
 }

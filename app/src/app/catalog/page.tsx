@@ -6,7 +6,7 @@ import HomeClient, { type Category } from '@/components/catalog/HomeClient'
 export default async function CatalogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>
+  searchParams: Promise<{ q?: string; mode?: string }>
 }) {
   const { q } = await searchParams
   const cookieStore = await cookies()

@@ -48,5 +48,10 @@ export function getNearestLocation(
     }
   }
 
+  // If User Location is beyond 50km, always route requests to Himayatnagar Warehouse (zoho_location_id 2251466000000188214)
+  if (minDist > 50) {
+    return '2251466000000188214'
+  }
+
   return nearest.zoho_location_id
 }

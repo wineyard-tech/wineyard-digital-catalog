@@ -23,6 +23,17 @@ interface AuthState {
   contact_name?: string
 }
 
+/** Dedupes /api/me across React Strict Mode double-mount (dev) — one network request per page load. */
+let authStatePromise: Promise<AuthState> | null = null
+function fetchAuthStateOnce(): Promise<AuthState> {
+  if (!authStatePromise) {
+    authStatePromise = fetch('/api/me')
+      .then((r) => r.json() as Promise<AuthState>)
+      .catch(() => ({ authenticated: false }))
+  }
+  return authStatePromise
+}
+
 interface EstimateBanner {
   public_id: string          // UUID — passed as estimate_id when placing order
   estimate_number: string
@@ -47,21 +58,19 @@ export default function CartPage() {
   const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
 
-  // Read wl cookie for delivery location display and routing coords
+  // Read wl cookie (warehouse_name is set on the location screen — no /api/nearest-location here).
   useEffect(() => {
     try {
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
       if (!match) return
-      const data = JSON.parse(decodeURIComponent(match.slice(3)))
-      setDeliveryArea(data.name || data.area || data.city || null)
-      const lat = typeof data.lat === 'number' && isFinite(data.lat) ? data.lat : null
-      const lng = typeof data.lng === 'number' && isFinite(data.lng) ? data.lng : null
-      if (lat !== null && lng !== null) {
-        fetch(`/api/nearest-location?lat=${lat}&lng=${lng}`)
-          .then(r => r.ok ? r.json() : null)
-          .then(d => { if (d?.name) setWarehouseName(d.name) })
-          .catch(() => {})
+      const data = JSON.parse(decodeURIComponent(match.slice(3))) as {
+        name?: string
+        area?: string
+        city?: string
+        warehouse_name?: string
       }
+      setDeliveryArea(data.name || data.area || data.city || null)
+      setWarehouseName(typeof data.warehouse_name === 'string' ? data.warehouse_name : null)
     } catch { /* malformed cookie — ignore */ }
   }, [])
 
@@ -84,10 +93,7 @@ export default function CartPage() {
 
   // ── Check auth state on mount ─────────────────────────────────────────────
   useEffect(() => {
-    fetch('/api/me')
-      .then((r) => r.json())
-      .then((data: AuthState) => setAuthState(data))
-      .catch(() => setAuthState({ authenticated: false }))
+    fetchAuthStateOnce().then(setAuthState)
   }, [])
 
   // ── Handle deep link: ?estimate_id=<uuid> ────────────────────────────────

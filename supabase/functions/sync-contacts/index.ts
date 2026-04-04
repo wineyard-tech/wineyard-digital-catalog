@@ -96,10 +96,8 @@ serve(async (req) => {
           Array.isArray(contact.custom_fields) ? contact.custom_fields : []
         const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
         const online_catalogue_access =
-          cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
-        const cfCatalogAccessEntry = cfFields.find(f => f.api_name === 'cf_catalog_access')
-        const catalog_access =
-          cfCatalogAccessEntry?.value === true || cfCatalogAccessEntry?.value === 'true' || false
+          cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'YES' || false
+        const catalog_access = online_catalogue_access || false
 
         contactRows.push({
           zoho_contact_id: contact.contact_id,
@@ -130,11 +128,9 @@ serve(async (req) => {
           const personCfFields: Array<{ api_name?: string; value?: unknown }> =
             Array.isArray(person.custom_fields) ? person.custom_fields : []
           const personOnlineCatalogEntry = personCfFields.find(f => f.api_name === 'cf_online_catalogue_access')
-          const person_online_catalogue_access =
-            personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'true' || false
-          const personCatalogAccessEntry = personCfFields.find(f => f.api_name === 'cf_catalog_access')
-          const person_catalog_access =
-            personCatalogAccessEntry?.value === true || personCatalogAccessEntry?.value === 'true' || false
+          const online_catalogue_access =
+            personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'YES' || false
+          const person_catalog_access = online_catalogue_access || false
           personRows.push({
             zoho_contact_person_id: person.contact_person_id,
             zoho_contact_id: contact.contact_id,
@@ -145,8 +141,8 @@ serve(async (req) => {
             mobile: normalizeIndianPhone(person.mobile),
             is_primary: person.is_primary_contact ?? false,
             communication_preference: person.communication_preference ?? null,
-            online_catalogue_access: person_online_catalogue_access,
-            catalog_access: person_catalog_access,
+            online_catalogue_access,
+            catalog_access
           })
         }
       }

@@ -4,6 +4,7 @@ import { createHmac, timingSafeEqual, randomBytes, randomInt } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getContactByPhone } from '@/lib/zoho'
 import { sendOtpMessage, sendGuestLink } from '@/lib/whatsapp'
+import { hashOTP } from '@/lib/auth/otp'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://catalog.wineyard.in'
 
@@ -110,12 +111,13 @@ async function processWebhookPayload(rawBody: string): Promise<void> {
     const now = new Date()
     const otpExpiry = new Date(now.getTime() + 10 * 60 * 1000).toISOString()
     const refExpiry = new Date(now.getTime() + 60 * 60 * 1000).toISOString()
+    const otpHash = await hashOTP(otp)
 
     await supabase.from('auth_requests').insert({
       ref_id: refId,
       phone,
       zoho_contact_id: contact.zoho_contact_id,
-      otp_code: otp,
+      otp_code: otpHash,
       otp_expires_at: otpExpiry,
       ref_expires_at: refExpiry,
     })

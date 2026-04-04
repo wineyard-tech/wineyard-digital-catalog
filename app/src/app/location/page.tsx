@@ -16,6 +16,8 @@ interface LocationData {
   city: string
   lat?: number
   lng?: number
+  /** Nearest Wine Yard warehouse name — set once here via /api/nearest-location (not on cart). */
+  warehouse_name?: string
 }
 
 type DetectState = 'idle' | 'detecting' | 'denied'
@@ -105,8 +107,22 @@ export default function LocationPage() {
     toastTimerRef.current = setTimeout(() => { if (mountedRef.current) setToast('') }, 3500)
   }
 
-  function confirmAndNavigate(loc: LocationData) {
-    writeLocationCookie(loc)
+  async function confirmAndNavigate(loc: LocationData) {
+    let next: LocationData = { ...loc }
+    const lat = typeof loc.lat === 'number' && isFinite(loc.lat) ? loc.lat : null
+    const lng = typeof loc.lng === 'number' && isFinite(loc.lng) ? loc.lng : null
+    if (lat !== null && lng !== null) {
+      try {
+        const r = await fetch(`/api/nearest-location?lat=${lat}&lng=${lng}`)
+        if (r.ok) {
+          const d: { name?: string | null } = await r.json()
+          if (d?.name) next = { ...next, warehouse_name: d.name }
+        }
+      } catch {
+        /* keep location without warehouse label */
+      }
+    }
+    writeLocationCookie(next)
     router.replace('/catalog?mode=browse')
   }
 

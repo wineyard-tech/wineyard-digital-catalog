@@ -15,6 +15,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
+import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
 
 const logger = makeLogger('[items-webhook]')
 
@@ -335,7 +336,7 @@ serve(async (req: Request) => {
     logger.warn('AUTH_FAIL', { reason: 'x-zoho-webhook-token header missing' })
     return new Response('Unauthorized', { status: 401 })
   }
-  if (receivedToken !== expectedToken) {
+  if (!timingSafeEqualString(receivedToken, expectedToken)) {
     const masked = `${receivedToken.slice(0, 4)}...${receivedToken.slice(-4)}`
     logger.warn('AUTH_FAIL', { reason: 'token mismatch', received_masked: masked, expected_len: expectedToken.length })
     return new Response('Unauthorized', { status: 401 })

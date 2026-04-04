@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
+import { resolvePricebookRatesForItemIds } from '@/lib/pricing'
 import type { CatalogItem, CartItem } from '@/types/catalog'
 
 export interface PurchasedProduct extends CatalogItem {
@@ -73,8 +74,7 @@ export async function GET(request: NextRequest) {
 
   // ── 3. No order history → return bestsellers ───────────────────────────────
   if (productMap.size === 0) {
-    const pricebookRates = await resolvePricebookRates(supabase, session.zoho_contact_id)
-    const bestsellers = await getBestsellers(supabase, pricebookRates)
+    const bestsellers = await getBestsellers(supabase, session.zoho_contact_id)
     return NextResponse.json({ has_orders: false, products: [], bestsellers })
   }
 
@@ -86,8 +86,11 @@ export async function GET(request: NextRequest) {
     .in('zoho_item_id', itemIds)
     .eq('status', 'active')
 
-  // ── 5. Resolve pricebook rates ─────────────────────────────────────────────
-  const pricebookRates = await resolvePricebookRates(supabase, session.zoho_contact_id)
+  const pricebookRates = await resolvePricebookRatesForItemIds(
+    supabase,
+    session.zoho_contact_id,
+    itemIds
+  )
 
   // ── 6. Shape PurchasedProduct[] ───────────────────────────────────────────
   const products: PurchasedProduct[] = (rows ?? []).map((row) => {
@@ -127,39 +130,11 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ has_orders: true, products })
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 type SupabaseClient = ReturnType<typeof createServiceClient>
-
-async function resolvePricebookRates(
-  supabase: SupabaseClient,
-  zohoContactId: string,
-): Promise<Record<string, number>> {
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('pricebook_id')
-    .eq('zoho_contact_id', zohoContactId)
-    .maybeSingle()
-
-  if (!contact?.pricebook_id) return {}
-
-  const { data: pbRows } = await supabase
-    .from('pricebooks')
-    .select('zoho_item_id, custom_rate')
-    .eq('zoho_pricebook_id', contact.pricebook_id)
-
-  if (!pbRows) return {}
-  return Object.fromEntries(
-    (pbRows as { zoho_item_id: string; custom_rate: number }[]).map((p) => [
-      p.zoho_item_id,
-      Number(p.custom_rate),
-    ]),
-  )
-}
 
 async function getBestsellers(
   supabase: SupabaseClient,
-  pricebookRates: Record<string, number>,
+  zohoContactId: string,
 ): Promise<CatalogItem[]> {
   const { data: popularRows } = await supabase
     .from('product_popularity')
@@ -170,6 +145,8 @@ async function getBestsellers(
   if (!popularRows || popularRows.length === 0) return []
 
   const popularIds = (popularRows as { zoho_item_id: string }[]).map((r) => r.zoho_item_id)
+
+  const pricebookRates = await resolvePricebookRatesForItemIds(supabase, zohoContactId, popularIds)
 
   const { data: rows } = await supabase
     .from('items')

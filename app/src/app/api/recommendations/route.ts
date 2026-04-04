@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth'
+import { resolvePricebookRatesForItemIds } from '@/lib/pricing'
 import type { CatalogItem } from '@/types/catalog'
 
 /**
@@ -28,8 +29,7 @@ export async function GET(request: NextRequest) {
   const cartIds = idsParam.split(',').map((s) => s.trim()).filter(Boolean)
   if (cartIds.length === 0) return NextResponse.json({ items: [] })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const supabase = createServiceClient() as any
+  const supabase = createServiceClient()
 
   // ── Resolve caller for pricebook pricing ──────────────────────────────────
   const sessionToken = request.cookies.get('session_token')?.value
@@ -162,32 +162,11 @@ export async function GET(request: NextRequest) {
 
   if (!itemRows || itemRows.length === 0) return NextResponse.json({ items: [] })
 
-  // ── Resolve pricebook rates ────────────────────────────────────────────────
-  let pricebookRates: Record<string, number> = {}
-  if (zohoContactId) {
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('pricebook_id')
-      .eq('zoho_contact_id', zohoContactId)
-      .maybeSingle()
-
-    if (contact?.pricebook_id) {
-      const { data: pbRows } = await supabase
-        .from('pricebooks')
-        .select('zoho_item_id, custom_rate')
-        .eq('zoho_pricebook_id', contact.pricebook_id)
-        .in('zoho_item_id', suggestionIds)
-
-      if (pbRows) {
-        pricebookRates = Object.fromEntries(
-          (pbRows as { zoho_item_id: string; custom_rate: number }[]).map((p) => [
-            p.zoho_item_id,
-            Number(p.custom_rate),
-          ])
-        )
-      }
-    }
-  }
+  const pricebookRates = await resolvePricebookRatesForItemIds(
+    supabase,
+    zohoContactId,
+    suggestionIds
+  )
 
   // ── Shape CatalogItem[] preserving suggestion order ────────────────────────
   const itemMap = Object.fromEntries(

@@ -12,6 +12,7 @@ import {
 import { getNearestLocation } from '@/lib/routing'
 import type { EnquiryRequest, CartItem } from '@/types/catalog'
 import type { GeocodedLocation } from '@/lib/routing'
+import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -53,13 +54,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Cart is empty' }, { status: 400 })
   }
 
-  // ── Compute totals + cart hash ────────────────────────────────────────────
-  const subtotal = body.items.reduce((sum: number, item: CartItem) => sum + item.line_total, 0)
-  const tax = Math.round(subtotal * 0.18 * 100) / 100
-  const total = subtotal  // tax is shown separately; total = subtotal (pre-tax)
-  const cartHash = buildCartHash(body.items)
-
   const supabase = createServiceClient()
+
+  // ── Server-side pricing (ignore client rate / line_total) ─────────────────
+  const priced = await buildServerEnquiryLineItems(supabase, session.zoho_contact_id, body.items)
+  if (!priced.ok) {
+    return NextResponse.json({ error: priced.message }, { status: 400 })
+  }
+  body.items = priced.items
+  const subtotal = priced.subtotal
+  const tax = priced.tax
+  const total = subtotal // tax is shown separately; total = subtotal (pre-tax)
+  const cartHash = buildCartHash(body.items)
 
   // ── Update existing estimate (cart opened from WhatsApp deep link) ─────────
   if (body.estimate_id) {

@@ -8,6 +8,7 @@
     "start": "./node_modules/.bin/next start"
   },
   "dependencies": {
+    "@ducanh2912/next-pwa": "^10.2.9",
     "@googlemaps/js-api-loader": "^2.0.2",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.1",
@@ -15,9 +16,11 @@
     "lucide-react": "^0.577.0",
     "nanoid": "^5.1.6",
     "next": "^16.2.1",
-    "next-pwa": "^2.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3"
+  },
+  "overrides": {
+    "serialize-javascript": "7.0.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

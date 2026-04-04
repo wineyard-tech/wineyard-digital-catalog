@@ -16,6 +16,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { normalizeIndianPhone, extractPhoneFromContact, describeContactPhones } from '../_shared/phone-normalizer.ts'
 import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
+import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
 
 const logger = makeLogger('[contacts-webhook]')
 
@@ -146,10 +147,8 @@ async function handleUpsert(
     Array.isArray(contact.custom_fields) ? contact.custom_fields : []
   const cfCatalogEntry = cfFields.find(f => f.api_name === 'cf_online_catalogue_access')
   const online_catalogue_access =
-    cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'true' || false
-  const cfCatalogAccessEntry = cfFields.find(f => f.api_name === 'cf_catalog_access')
-  const catalog_access =
-    cfCatalogAccessEntry?.value === true || cfCatalogAccessEntry?.value === 'true' || false
+    cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'YES' || false
+  const catalog_access = online_catalogue_access || false
 
   const contactRow = {
     zoho_contact_id:           contactId,
@@ -245,11 +244,9 @@ async function handleUpsert(
         const personCfFields: Array<{ api_name?: string; value?: unknown }> =
           Array.isArray(p.custom_fields) ? p.custom_fields : []
         const personOnlineCatalogEntry = personCfFields.find(f => f.api_name === 'cf_online_catalogue_access')
-        const person_online_catalogue_access =
-          personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'true' || false
-        const personCatalogAccessEntry = personCfFields.find(f => f.api_name === 'cf_catalog_access')
-        const person_catalog_access =
-          personCatalogAccessEntry?.value === true || personCatalogAccessEntry?.value === 'true' || false
+        const online_catalogue_access =
+          personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'YES' || false
+        const catalog_access = online_catalogue_access || false
         return {
           zoho_contact_person_id:   p.contact_person_id,
           zoho_contact_id:          contactId,
@@ -260,8 +257,8 @@ async function handleUpsert(
           mobile:                   normalizeIndianPhone(p.mobile),
           is_primary:               p.is_primary_contact ?? false,
           communication_preference: p.communication_preference ?? null,
-          online_catalogue_access:  person_online_catalogue_access,
-          catalog_access:           person_catalog_access,
+          online_catalogue_access,
+          catalog_access,
           status:                   'active',
           updated_at:               new Date().toISOString(),
         }
@@ -375,7 +372,7 @@ serve(async (req: Request) => {
     logger.warn('AUTH_FAIL', { reason: 'x-zoho-webhook-token header missing' })
     return new Response('Unauthorized', { status: 401 })
   }
-  if (receivedToken !== expectedToken) {
+  if (!timingSafeEqualString(receivedToken, expectedToken)) {
     const masked = `${receivedToken.slice(0, 4)}...${receivedToken.slice(-4)}`
     logger.warn('AUTH_FAIL', { reason: 'token mismatch', received_masked: masked, expected_len: expectedToken.length })
     return new Response('Unauthorized', { status: 401 })
