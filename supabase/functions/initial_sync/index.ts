@@ -9,10 +9,14 @@
 //
 // POST body (all optional):
 //   {
-//     "entity": "locations" | "items" | "pricebooks" | "contacts" | "all",  // default: "all"
-//     "page_from": 1,   // contacts only — resume from page N (default 1)
-//     "page_to": 999    // contacts only — stop after page N (default all)
+//     "entity": "locations" | "items" | "pricebooks" | "contacts" | "invoices" | "estimates" | "all",
+//     "page_from": 1,   // contacts/invoices/estimates — resume from page N (default 1)
+//     "page_to": 999,   // contacts/invoices/estimates — stop after page N (default all)
+//     "days": 90        // invoices/estimates — how many days back to sync (default 90)
 //   }
+//
+// All paginated responses include: page_from, page_to, has_more, next_page.
+// When has_more=true, pass next_page as page_from in the next call.
 //
 // Recommended invocation order for first-time full sync:
 //   1. POST { "entity": "locations" }               — sync warehouses/branches first (FK dependency)
@@ -21,8 +25,10 @@
 //   4. POST { "entity": "contacts", "page_from": 1,  "page_to": 15 }   — ~3000 contacts
 //   5. POST { "entity": "contacts", "page_from": 16, "page_to": 30 }   — next 3000
 //   6. POST { "entity": "contacts", "page_from": 31 }                  — remainder
+//   7. POST { "entity": "invoices", "days": 90 }    — last 90 days; chain via next_page if has_more
+//   8. POST { "entity": "estimates", "days": 90 }   — last 90 days; chain via next_page if has_more
 //
-// page_from/page_to exist because contacts WORKER_LIMIT is hit beyond ~3000 contacts per
+// page_from/page_to exist because large datasets hit WORKER_LIMIT beyond ~3000 records per
 // invocation (each fallback row-by-row retry multiplies DB calls significantly).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -700,8 +706,10 @@ async function syncAllContacts(
     contacts_skipped:         contactsSkipped,
     contact_persons_upserted: personsUpserted,
     pages_fetched:            pageCount,
+    page_from:                pageFrom,
+    page_to:                  lastPageSeen,
     has_more:                 hasMorePages,
-    ...(nextPage !== null ? { next_page: nextPage } : {}),
+    next_page:                nextPage,
   }
 }
 
@@ -886,7 +894,9 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
 async function syncAllEstimates(
   supabase: ReturnType<typeof createClient>,
   token: string,
-  days = 90
+  days = 90,
+  pageFrom = 1,
+  pageTo = 999
 ) {
   // Compute date_start: N calendar days ago in YYYY-MM-DD (UTC date is fine for
   // Zoho's date field — IST offset of half a day won't miss records at the boundary)
@@ -896,19 +906,23 @@ async function syncAllEstimates(
 
   console.log(`[estimates] initial sync from ${dateStart} (last ${days} days)`)
 
-  let upserted   = 0
-  let skipped    = 0
-  let pageCount  = 0
+  let upserted     = 0
+  let skipped      = 0
+  let pageCount    = 0
   let stoppedEarly = false
-  const startTime  = Date.now()
+  let lastPageSeen = pageFrom - 1
+  const startTime   = Date.now()
   const TIME_BUDGET = 110_000
+  const maxPages    = pageTo - pageFrom + 1
 
   for await (const { rows: zohoEstimates, page, hasMore } of streamZohoPages<any>(
     '/estimates',
     token,
     ORG_ID,
     'estimates',
-    { date_start: dateStart }
+    { date_start: dateStart },
+    maxPages,
+    pageFrom
   )) {
     pageCount++
     console.log(`[estimates] page ${page}: ${zohoEstimates.length} records, has_more=${hasMore}`)
@@ -979,6 +993,7 @@ async function syncAllEstimates(
 
     console.log(`[estimates] page ${page}: +${rows.length} (total: ${upserted})`)
 
+    lastPageSeen = page
     if (hasMore && Date.now() - startTime > TIME_BUDGET) {
       stoppedEarly = true
       console.log(`[estimates] time budget reached after page ${page}`)
@@ -986,12 +1001,18 @@ async function syncAllEstimates(
     }
   }
 
+  const hasMorePages = stoppedEarly
+  const nextPage     = hasMorePages ? lastPageSeen + 1 : null
+
   return {
     estimates_upserted: upserted,
     estimates_skipped:  skipped,
     pages_fetched:      pageCount,
     date_start:         dateStart,
-    has_more:           stoppedEarly,
+    page_from:          pageFrom,
+    page_to:            lastPageSeen,
+    has_more:           hasMorePages,
+    next_page:          nextPage,
   }
 }
 
@@ -1006,7 +1027,9 @@ async function syncAllEstimates(
 async function syncAllInvoices(
   supabase: ReturnType<typeof createClient>,
   token: string,
-  days = 90
+  days = 90,
+  pageFrom = 1,
+  pageTo = 999
 ) {
   const dateStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -1014,19 +1037,23 @@ async function syncAllInvoices(
 
   console.log(`[invoices] initial sync from ${dateStart} (last ${days} days)`)
 
-  let upserted    = 0
-  let skipped     = 0
-  let pageCount   = 0
+  let upserted     = 0
+  let skipped      = 0
+  let pageCount    = 0
   let stoppedEarly = false
-  const startTime  = Date.now()
+  let lastPageSeen = pageFrom - 1
+  const startTime   = Date.now()
   const TIME_BUDGET = 110_000
+  const maxPages    = pageTo - pageFrom + 1
 
   for await (const { rows: zohoInvoices, page, hasMore } of streamZohoPages<any>(
     '/invoices',
     token,
     ORG_ID,
     'invoices',
-    { date_start: dateStart }
+    { date_start: dateStart },
+    maxPages,
+    pageFrom
   )) {
     pageCount++
     console.log(`[invoices] page ${page}: ${zohoInvoices.length} records, has_more=${hasMore}`)
@@ -1124,6 +1151,7 @@ async function syncAllInvoices(
 
     console.log(`[invoices] page ${page}: +${rows.length} (total: ${upserted})`)
 
+    lastPageSeen = page
     if (hasMore && Date.now() - startTime > TIME_BUDGET) {
       stoppedEarly = true
       console.log(`[invoices] time budget reached after page ${page}`)
@@ -1131,12 +1159,18 @@ async function syncAllInvoices(
     }
   }
 
+  const hasMorePages = stoppedEarly
+  const nextPage     = hasMorePages ? lastPageSeen + 1 : null
+
   return {
     invoices_upserted: upserted,
     invoices_skipped:  skipped,
     pages_fetched:     pageCount,
     date_start:        dateStart,
-    has_more:          stoppedEarly,
+    page_from:         pageFrom,
+    page_to:           lastPageSeen,
+    has_more:          hasMorePages,
+    next_page:         nextPage,
   }
 }
 
@@ -1225,14 +1259,14 @@ serve(async (req) => {
     }
 
     if (entity === 'estimates') {
-      console.log(`Starting estimates initial sync (last ${days} days)…`)
-      estimatesResult = await syncAllEstimates(supabase, token, days)
+      console.log(`Starting estimates initial sync (last ${days} days, pages ${pageFrom}–${pageTo === 999 ? 'end' : pageTo})…`)
+      estimatesResult = await syncAllEstimates(supabase, token, days, pageFrom, pageTo)
       console.log('Estimates sync complete:', estimatesResult)
     }
 
     if (entity === 'invoices') {
-      console.log(`Starting invoices initial sync (last ${days} days)…`)
-      invoicesResult = await syncAllInvoices(supabase, token, days)
+      console.log(`Starting invoices initial sync (last ${days} days, pages ${pageFrom}–${pageTo === 999 ? 'end' : pageTo})…`)
+      invoicesResult = await syncAllInvoices(supabase, token, days, pageFrom, pageTo)
       console.log('Invoices sync complete:', invoicesResult)
     }
 
