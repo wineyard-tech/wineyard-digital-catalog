@@ -52,8 +52,6 @@ serve(async (req) => {
     let totalPersonsSynced = 0
     let pageCount = 0
     let lastPageSeen = 0
-    const startTime = Date.now()
-    const TIME_BUDGET = 110_000   // 110s — 40s buffer before 150s hard limit
 
     // ── Stream one page at a time: fetch → build → upsert → next page ────────
     // This pipelines network I/O with DB writes instead of collect-then-process,
@@ -209,23 +207,21 @@ serve(async (req) => {
       // Stop early if test_limit reached
       if (testLimit && (totalSynced + totalSkipped) >= testLimit) break
 
-      // Time-budget check — stop gracefully after current page's writes complete
-      if (hasMore && Date.now() - startTime > TIME_BUDGET) {
-        console.log(`sync-contacts: time budget reached after page ${page}`)
-        break
-      }
-
       // No more pages
       if (!hasMore) break
     }
 
     const summary = {
-      contacts_synced: totalSynced,
-      contacts_skipped: totalSkipped,
+      contacts_synced:        totalSynced,
+      contacts_skipped:       totalSkipped,
       contact_persons_synced: totalPersonsSynced,
-      pages_fetched: pageCount,
-      last_modified_since: lastModified,
-      synced_at: new Date().toISOString(),
+      pages_fetched:          pageCount,
+      page_from:              1,
+      page_to:                lastPageSeen,
+      has_more:               false,
+      next_page:              null,
+      last_modified_since:    lastModified,
+      synced_at:              new Date().toISOString(),
     }
 
     console.log('sync-contacts complete:', summary)

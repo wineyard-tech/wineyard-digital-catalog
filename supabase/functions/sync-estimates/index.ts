@@ -50,8 +50,7 @@ serve(async (req) => {
     let totalUpserted = 0
     let totalSkipped  = 0
     let pageCount     = 0
-    const startTime   = Date.now()
-    const TIME_BUDGET = 110_000   // 110s — 40s buffer before 150s hard limit
+    let lastPageSeen  = 0
 
     for await (const { rows: zohoEstimates, page, hasMore } of streamZohoPages<any>(
       '/estimates',
@@ -136,21 +135,20 @@ serve(async (req) => {
 
       console.log(`[sync-estimates] page ${page}: +${rows.length} (running total: ${totalUpserted})`)
 
-      // Time-budget check — stop gracefully after current page's writes complete
-      if (hasMore && Date.now() - startTime > TIME_BUDGET) {
-        console.log(`[sync-estimates] time budget reached after page ${page}`)
-        break
-      }
-
+      lastPageSeen = page
       if (!hasMore) break
     }
 
     const summary = {
-      estimates_upserted:    totalUpserted,
-      estimates_skipped:     totalSkipped,
-      pages_fetched:         pageCount,
-      last_modified_since:   lastModified,
-      synced_at:             new Date().toISOString(),
+      estimates_upserted:  totalUpserted,
+      estimates_skipped:   totalSkipped,
+      pages_fetched:       pageCount,
+      page_from:           1,
+      page_to:             lastPageSeen,
+      has_more:            false,
+      next_page:           null,
+      last_modified_since: lastModified,
+      synced_at:           new Date().toISOString(),
     }
 
     console.log('[sync-estimates] complete:', summary)
