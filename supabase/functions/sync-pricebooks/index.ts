@@ -1,14 +1,17 @@
 // sync-pricebooks Edge Function
-// Full sync: fetches all active pricebooks from Zoho and upserts item prices.
+// Incremental sync: fetches only pricebooks modified since yesterday 03:55 AM IST.
 // Runs weekly (Sundays at 03:30 AM IST) via pg_cron, or triggered manually.
 //
+// Consistent with sync-items and sync-contacts: uses getLastModifiedFilter() so only
+// records changed in the last ~24 hours are fetched, preventing full-scan timeouts.
+//
 // Failsafe: if a pricebook references a zoho_item_id not yet in `items`,
-// a stub item row is inserted (status='inactive') so the FK is satisfied.
-// sync-items will overwrite the stub with real data on its next run.
+// the real item is fetched from Zoho (GET /items/{id}) and inserted before the
+// pricebook_item row is created — no stubs, no FK violations.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { getZohoToken, fetchAllZohoPages, zohoGet } from '../_shared/zoho-client.ts'
+import { getZohoToken, fetchAllZohoPages, zohoGet, getLastModifiedFilter } from '../_shared/zoho-client.ts'
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
@@ -17,6 +20,13 @@ function dec(val: any): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : n
+}
+
+/** Coerce Zoho decimal strings/empty to integer | null */
+function int(val: any): number | null {
+  if (val === '' || val === null || val === undefined) return null
+  const n = Number(val)
+  return isNaN(n) ? null : Math.round(n)
 }
 
 serve(async (req) => {
@@ -32,31 +42,47 @@ serve(async (req) => {
   try {
     const token = await getZohoToken(supabase)
 
-    // ── Step 1: Fetch all pricebook metadata ──────────────────────────────────
+    // ── Step 1: Fetch pricebooks modified in the last ~24 hours ──────────────
+    const lastModified = getLastModifiedFilter()
+    console.log(`Fetching pricebooks modified since ${lastModified}`)
+
     const pricebookList = await fetchAllZohoPages<any>(
       '/pricebooks',
       token,
       ORG_ID,
-      'pricebooks'
+      'pricebooks',
+      { last_modified_time: lastModified }
     )
-    console.log(`Found ${pricebookList.length} pricebooks in Zoho`)
+    console.log(`Found ${pricebookList.length} modified pricebook(s) in Zoho`)
+
+    if (pricebookList.length === 0) {
+      return new Response(JSON.stringify({
+        pricebooks_synced: 0,
+        item_prices_upserted: 0,
+        missing_items_fetched: 0,
+        errors_count: 0,
+        errors: [],
+        synced_at: new Date().toISOString(),
+      }), { headers: { 'Content-Type': 'application/json' } })
+    }
 
     let pricebooksUpserted = 0
     let itemPricesUpserted = 0
-    let stubItemsCreated = 0
+    let missingItemsFetched = 0
     const errors: string[] = []
 
     for (const pb of pricebookList) {
       const pricebookId: string = pb.pricebook_id
       const pricebookName: string = pb.pricebook_name ?? pb.name ?? `Pricebook ${pricebookId}`
 
-      // ── Step 2: Upsert pricebook metadata ─────────────────────────────────
+      // ── Step 2: Upsert pricebook metadata ───────────────────────────────────
       const { error: catalogErr } = await supabase
         .from('pricebook_catalog')
         .upsert({
           zoho_pricebook_id: pricebookId,
           pricebook_name: pricebookName,
-          is_active: true,
+          currency_id: pb.currency_id || 'INR',
+          is_active: (pb.status ?? 'active') === 'active',
           synced_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: 'zoho_pricebook_id' })
@@ -90,14 +116,13 @@ serve(async (req) => {
         pbPage++
       }
       if (pbFailed) continue
-
       if (pbItems.length === 0) continue
 
-      // ── Step 4: Failsafe — ensure all referenced items exist ───────────────
-      // Collect item IDs referenced by this pricebook
+      // ── Step 4: Failsafe — fetch any referenced items missing from `items` ────
+      // pricebook_items.zoho_item_id has an FK to items — fetch real item data from
+      // Zoho rather than inserting stubs so the catalog has correct data immediately.
       const itemIds = pbItems.map(i => i.item_id)
 
-      // Find which ones are missing from `items`
       const { data: existingItems } = await supabase
         .from('items')
         .select('zoho_item_id')
@@ -107,39 +132,70 @@ serve(async (req) => {
       const missingIds = itemIds.filter(id => !existingSet.has(id))
 
       if (missingIds.length > 0) {
-        console.log(`Creating ${missingIds.length} stub items for pricebook ${pricebookId}`)
-        const stubs = missingIds.map(id => ({
-          zoho_item_id: id,
-          item_name: `[Stub] ${id}`,
-          sku: `STUB-${id}`,
-          status: 'inactive',           // invisible to catalog until sync-items fills it in
-          base_rate: 0,
-          updated_at: new Date().toISOString(),
-        }))
-
-        // Row-by-row to avoid one bad stub blocking the rest
-        for (const stub of stubs) {
-          const { error: stubErr } = await supabase
-            .from('items')
-            .upsert(stub, { onConflict: 'zoho_item_id', ignoreDuplicates: true })
-          if (stubErr) {
-            errors.push(`Stub item ${stub.zoho_item_id}: ${stubErr.message}`)
-          } else {
-            stubItemsCreated++
+        console.log(`Fetching ${missingIds.length} missing item(s) from Zoho for pricebook ${pricebookId}`)
+        for (const itemId of missingIds) {
+          try {
+            const itemDetail = await zohoGet(`/items/${itemId}`, token, ORG_ID)
+            if (itemDetail.code === 0 && itemDetail.item?.item_id) {
+              const item = itemDetail.item
+              const { error: itemErr } = await supabase
+                .from('items')
+                .upsert({
+                  zoho_item_id:           item.item_id,
+                  item_name:              item.name,
+                  sku:                    item.sku?.trim() || `ITEM-${item.item_id}`,
+                  category_id:            item.category_id || null,
+                  category_name:          item.category_name || null,
+                  brand:                  item.brand?.trim() || null,
+                  manufacturer:           item.manufacturer_name || null,
+                  description:            item.description || null,
+                  hsn_or_sac:             item.hsn_or_sac || null,
+                  unit:                   item.unit || 'pcs',
+                  status:                 item.status ?? 'active',
+                  item_type:              item.item_type || 'inventory',
+                  product_type:           item.product_type || 'goods',
+                  base_rate:              dec(item.rate),
+                  purchase_rate:          dec(item.purchase_rate),
+                  is_taxable:             item.is_taxable ?? true,
+                  tax_id:                 item.tax_id || null,
+                  tax_name:               item.tax_name || null,
+                  tax_percentage:         dec(item.tax_percentage) ?? 18.0,
+                  track_inventory:        item.track_inventory ?? false,
+                  available_stock:        int(item.available_stock),
+                  actual_available_stock: int(item.actual_available_stock),
+                  reorder_level:          int(item.reorder_level),
+                  upc:                    item.upc || null,
+                  ean:                    item.ean || null,
+                  part_number:            item.part_number || null,
+                  custom_fields:          item.custom_fields ?? {},
+                  created_time:           item.created_time || null,
+                  last_modified_time:     item.last_modified_time || null,
+                  updated_at:             new Date().toISOString(),
+                }, { onConflict: 'zoho_item_id' })
+              if (!itemErr) {
+                existingSet.add(item.item_id)
+                missingItemsFetched++
+              } else {
+                errors.push(`Fetch item ${itemId}: ${itemErr.message}`)
+              }
+            } else {
+              errors.push(`Item ${itemId} not found in Zoho (pricebook ${pricebookId}): ${itemDetail.message}`)
+            }
+          } catch (e) {
+            errors.push(`Fetch item ${itemId}: ${String(e)}`)
           }
         }
       }
 
-      // ── Step 5: Upsert item prices in batches of 200 ──────────────────────
+      // ── Step 5: Upsert item prices — only for items that now exist ────────────
       const priceRows = pbItems
+        .filter(pi => existingSet.has(pi.item_id))
         .map(pi => ({
           zoho_pricebook_id: pricebookId,
           zoho_item_id: pi.item_id,
-          custom_rate: dec(pi.pricebook_rate ?? pi.rate) ?? 0,
+          custom_rate: dec((pi as any).pricebook_rate ?? pi.rate) ?? 0,
           updated_at: new Date().toISOString(),
         }))
-        // Only insert rows where the item now exists (stubs included)
-        .filter(r => existingSet.has(r.zoho_item_id) || missingIds.includes(r.zoho_item_id))
 
       for (let i = 0; i < priceRows.length; i += 200) {
         const batch = priceRows.slice(i, i + 200)
@@ -165,19 +221,11 @@ serve(async (req) => {
       }
     }
 
-    // ── Step 6: Mark pricebooks no longer in Zoho as inactive ─────────────────
-    const activeIds = pricebookList.map((pb: any) => pb.pricebook_id)
-    if (activeIds.length > 0) {
-      await supabase
-        .from('pricebook_catalog')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .not('zoho_pricebook_id', 'in', `(${activeIds.map((id: string) => `'${id}'`).join(',')})`)
-    }
-
     const summary = {
       pricebooks_synced: pricebooksUpserted,
       item_prices_upserted: itemPricesUpserted,
-      stub_items_created: stubItemsCreated,
+      missing_items_fetched: missingItemsFetched,
+      last_modified_since: lastModified,
       errors_count: errors.length,
       errors: errors.slice(0, 20), // cap log size
       synced_at: new Date().toISOString(),

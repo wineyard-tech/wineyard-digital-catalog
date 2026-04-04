@@ -770,14 +770,87 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
 
     if (itemRows.length === 0) continue
 
-    // Try batch upsert first; fall back to row-by-row to isolate FK failures
+    // ── Failsafe: fetch any items referenced by this pricebook that are missing ─
+    // pricebook_items.zoho_item_id has an FK to items — if the item doesn't exist
+    // the batch upsert will fail. Fetch the real item from Zoho rather than inserting
+    // a stub so the catalog immediately has correct data.
+    const pbItemIds = itemRows.map((r: any) => r.zoho_item_id)
+    const { data: existingItems } = await supabase
+      .from('items')
+      .select('zoho_item_id')
+      .in('zoho_item_id', pbItemIds)
+    const existingSet = new Set((existingItems ?? []).map((r: any) => r.zoho_item_id))
+    const missingIds = pbItemIds.filter((id: string) => !existingSet.has(id))
+
+    if (missingIds.length > 0) {
+      console.log(`[pricebooks] ${pbName}: fetching ${missingIds.length} missing item(s) from Zoho`)
+      for (const itemId of missingIds) {
+        try {
+          const itemDetail = await zohoGet(`/items/${itemId}`, token, ORG_ID)
+          if (itemDetail.code === 0 && itemDetail.item?.item_id) {
+            const item = itemDetail.item
+            const { error: itemErr } = await supabase
+              .from('items')
+              .upsert({
+                zoho_item_id:           item.item_id,
+                item_name:              item.name,
+                sku:                    item.sku?.trim() || `ITEM-${item.item_id}`,
+                category_id:            item.category_id || null,
+                category_name:          item.category_name || null,
+                brand:                  item.brand?.trim() || null,
+                manufacturer:           item.manufacturer_name || null,
+                description:            item.description || null,
+                hsn_or_sac:             item.hsn_or_sac || null,
+                unit:                   item.unit || 'pcs',
+                status:                 item.status ?? 'active',
+                item_type:              item.item_type || 'inventory',
+                product_type:           item.product_type || 'goods',
+                base_rate:              dec(item.rate),
+                purchase_rate:          dec(item.purchase_rate),
+                is_taxable:             item.is_taxable ?? true,
+                tax_id:                 item.tax_id || null,
+                tax_name:               item.tax_name || null,
+                tax_percentage:         dec(item.tax_percentage) ?? 18.0,
+                track_inventory:        item.track_inventory ?? false,
+                available_stock:        int(item.available_stock),
+                actual_available_stock: int(item.actual_available_stock),
+                reorder_level:          int(item.reorder_level),
+                upc:                    item.upc || null,
+                ean:                    item.ean || null,
+                part_number:            item.part_number || null,
+                custom_fields:          item.custom_fields ?? {},
+                created_time:           item.created_time || null,
+                last_modified_time:     item.last_modified_time || null,
+                updated_at:             new Date().toISOString(),
+              }, { onConflict: 'zoho_item_id' })
+            if (!itemErr) {
+              existingSet.add(item.item_id)
+              console.log(`[pricebooks] fetched and upserted missing item ${itemId} for ${pbName}`)
+            } else {
+              console.warn(`[pricebooks] failed to upsert fetched item ${itemId}: ${itemErr.message}`)
+            }
+          } else {
+            console.warn(`[pricebooks] item ${itemId} not found in Zoho (${pbName}): ${itemDetail.message}`)
+          }
+        } catch (e) {
+          console.warn(`[pricebooks] error fetching item ${itemId}: ${String(e)}`)
+        }
+      }
+    }
+
+    // Only upsert price rows for items that now exist — avoids FK violations from
+    // items that were missing in Zoho too (deleted/inactive)
+    const safeItemRows = itemRows.filter((r: any) => existingSet.has(r.zoho_item_id))
+    if (safeItemRows.length === 0) continue
+
+    // Try batch upsert first; fall back to row-by-row to isolate any remaining failures
     const { error: batchErr } = await supabase
       .from('pricebook_items')
-      .upsert(itemRows, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
+      .upsert(safeItemRows, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
 
     if (batchErr) {
       console.warn(`[pricebooks] batch upsert failed for ${pbName}: ${batchErr.message} — retrying row-by-row`)
-      for (const row of itemRows) {
+      for (const row of safeItemRows) {
         const { error: rowErr } = await supabase
           .from('pricebook_items')
           .upsert(row, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
@@ -788,13 +861,283 @@ async function syncPricebooks(supabase: ReturnType<typeof createClient>, token: 
         }
       }
     } else {
-      itemsUpserted += itemRows.length
-      console.log(`[pricebooks] ${pbName}: ${itemRows.length} item prices upserted`)
+      itemsUpserted += safeItemRows.length
+      console.log(`[pricebooks] ${pbName}: ${safeItemRows.length} item prices upserted`)
     }
   }
 
   console.log(`[pricebooks] done — ${catalogRows.length} pricebooks, ${itemsUpserted} item prices`)
   return { pricebooks_upserted: catalogRows.length, pricebook_items_upserted: itemsUpserted }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Estimates initial sync (last N days)
+//
+// Fetches estimates created/updated within the last `days` calendar days using
+// the Zoho date_start filter. Pages through all results with streamZohoPages
+// until has_more_page is false (or empty page). Per-page contact phone lookup
+// is batched (one IN query per page) to avoid N+1 DB round-trips.
+//
+// Upserts with source='zoho'. The DB preserve_source trigger ensures any row
+// that was originally created by the catalog-app retains source='catalog-app'.
+//
+// POST { "entity": "estimates", "days": 90 }   (days defaults to 90)
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncAllEstimates(
+  supabase: ReturnType<typeof createClient>,
+  token: string,
+  days = 90
+) {
+  // Compute date_start: N calendar days ago in YYYY-MM-DD (UTC date is fine for
+  // Zoho's date field — IST offset of half a day won't miss records at the boundary)
+  const dateStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+
+  console.log(`[estimates] initial sync from ${dateStart} (last ${days} days)`)
+
+  let upserted   = 0
+  let skipped    = 0
+  let pageCount  = 0
+  let stoppedEarly = false
+  const startTime  = Date.now()
+  const TIME_BUDGET = 110_000
+
+  for await (const { rows: zohoEstimates, page, hasMore } of streamZohoPages<any>(
+    '/estimates',
+    token,
+    ORG_ID,
+    'estimates',
+    { date_start: dateStart }
+  )) {
+    pageCount++
+    console.log(`[estimates] page ${page}: ${zohoEstimates.length} records, has_more=${hasMore}`)
+    if (zohoEstimates.length === 0) continue
+
+    // ── Batch phone lookup: one IN query for all customer_ids on this page ────
+    const customerIds = [...new Set(
+      zohoEstimates.map((e: any) => e.customer_id).filter(Boolean)
+    )] as string[]
+
+    const phoneMap = new Map<string, string>()
+    if (customerIds.length > 0) {
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('zoho_contact_id, phone')
+        .in('zoho_contact_id', customerIds)
+      for (const c of contacts ?? []) {
+        if (c.phone) phoneMap.set(c.zoho_contact_id, c.phone)
+      }
+    }
+
+    // ── Build estimate rows for this page ─────────────────────────────────────
+    const rows: any[] = []
+    for (const e of zohoEstimates) {
+      if (!e.estimate_id) { skipped++; continue }
+      rows.push({
+        zoho_estimate_id: e.estimate_id,
+        estimate_number:  e.estimate_number || `ZOHO-EST-${e.estimate_id}`,
+        zoho_contact_id:  e.customer_id || null,
+        contact_phone:    phoneMap.get(e.customer_id) ?? '',
+        status:           e.status ?? 'draft',
+        date:             e.date || null,
+        expiry_date:      e.expiry_date || null,
+        line_items:       e.line_items ?? [],
+        subtotal:         dec(e.sub_total) ?? 0,
+        tax_total:        dec(e.tax_total) ?? 0,
+        total:            dec(e.total) ?? 0,
+        notes:            e.notes || null,
+        zoho_sync_status: 'synced',
+        source:           'zoho',
+        updated_at:       new Date().toISOString(),
+      })
+    }
+
+    if (rows.length === 0) continue
+
+    // ── Upsert this page — fall back to row-by-row on batch error ─────────────
+    const { error } = await supabase
+      .from('estimates')
+      .upsert(rows, { onConflict: 'zoho_estimate_id' })
+
+    if (error) {
+      console.warn(`[estimates] batch upsert failed p${page}: ${error.message} — retrying row-by-row`)
+      for (const row of rows) {
+        const { error: rowErr } = await supabase
+          .from('estimates')
+          .upsert(row, { onConflict: 'zoho_estimate_id' })
+        if (rowErr) {
+          console.warn(`[estimates] row failed ${row.zoho_estimate_id}: ${rowErr.message}`)
+          skipped++
+        } else {
+          upserted++
+        }
+      }
+    } else {
+      upserted += rows.length
+    }
+
+    console.log(`[estimates] page ${page}: +${rows.length} (total: ${upserted})`)
+
+    if (hasMore && Date.now() - startTime > TIME_BUDGET) {
+      stoppedEarly = true
+      console.log(`[estimates] time budget reached after page ${page}`)
+      break
+    }
+  }
+
+  return {
+    estimates_upserted: upserted,
+    estimates_skipped:  skipped,
+    pages_fetched:      pageCount,
+    date_start:         dateStart,
+    has_more:           stoppedEarly,
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invoices initial sync (last N days)
+//
+// Same strategy as syncAllEstimates — date_start filter, streamZohoPages,
+// batched phone lookup, source='zoho' with DB-level preserve_source trigger.
+//
+// POST { "entity": "invoices", "days": 90 }   (days defaults to 90)
+// ─────────────────────────────────────────────────────────────────────────────
+async function syncAllInvoices(
+  supabase: ReturnType<typeof createClient>,
+  token: string,
+  days = 90
+) {
+  const dateStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+
+  console.log(`[invoices] initial sync from ${dateStart} (last ${days} days)`)
+
+  let upserted    = 0
+  let skipped     = 0
+  let pageCount   = 0
+  let stoppedEarly = false
+  const startTime  = Date.now()
+  const TIME_BUDGET = 110_000
+
+  for await (const { rows: zohoInvoices, page, hasMore } of streamZohoPages<any>(
+    '/invoices',
+    token,
+    ORG_ID,
+    'invoices',
+    { date_start: dateStart }
+  )) {
+    pageCount++
+    console.log(`[invoices] page ${page}: ${zohoInvoices.length} records, has_more=${hasMore}`)
+    if (zohoInvoices.length === 0) continue
+
+    // ── Batch phone lookup ────────────────────────────────────────────────────
+    const customerIds = [...new Set(
+      zohoInvoices.map((inv: any) => inv.customer_id).filter(Boolean)
+    )] as string[]
+
+    const phoneMap = new Map<string, string>()
+    if (customerIds.length > 0) {
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('zoho_contact_id, phone')
+        .in('zoho_contact_id', customerIds)
+      for (const c of contacts ?? []) {
+        if (c.phone) phoneMap.set(c.zoho_contact_id, c.phone)
+      }
+    }
+
+    // ── Build invoice rows ────────────────────────────────────────────────────
+    const rows: any[] = []
+    for (const inv of zohoInvoices) {
+      if (!inv.invoice_id) { skipped++; continue }
+      rows.push({
+        zoho_invoice_id:            inv.invoice_id,
+        invoice_number:             inv.invoice_number || null,
+        zoho_contact_id:            inv.customer_id || null,
+        customer_name:              inv.customer_name || null,
+        contact_phone:              phoneMap.get(inv.customer_id) ?? '',
+        status:                     inv.status ?? 'draft',
+        date:                       inv.date || null,
+        due_date:                   inv.due_date || null,
+        issued_date:                inv.issued_date || null,
+        payment_terms:              int(inv.payment_terms),
+        payment_terms_label:        inv.payment_terms_label || null,
+        currency_code:              inv.currency_code || 'INR',
+        exchange_rate:              dec(inv.exchange_rate) ?? 1.0,
+        discount_type:              inv.discount_type || null,
+        is_discount_before_tax:     inv.is_discount_before_tax ?? true,
+        entity_discount_percent:    dec(inv.entity_discount_percent) ?? 0,
+        is_inclusive_tax:           inv.is_inclusive_tax ?? true,
+        line_items:                 inv.line_items ?? [],
+        subtotal:                   dec(inv.sub_total) ?? 0,
+        tax_total:                  dec(inv.tax_total) ?? 0,
+        total:                      dec(inv.total) ?? 0,
+        balance:                    dec(inv.balance) ?? 0,
+        adjustment:                 dec(inv.adjustment) ?? 0,
+        adjustment_description:     inv.adjustment_description || null,
+        adjustment_account:         inv.adjustment_account || null,
+        notes:                      inv.notes || null,
+        terms_and_conditions:       inv.terms_and_conditions || null,
+        purchase_order:             inv.purchase_order || null,
+        place_of_supply:            inv.place_of_supply || null,
+        gst_treatment:              inv.gst_treatment || null,
+        gstin:                      inv.gstin || null,
+        invoice_type:               inv.invoice_type || 'Invoice',
+        einvoice_status:            inv.einvoice_status || null,
+        branch_id:                  inv.branch_id || null,
+        branch_name:                inv.branch_name || null,
+        accounts_receivable:        inv.accounts_receivable || null,
+        tcs_amount:                 dec(inv.tcs_amount) ?? 0,
+        tds_amount:                 dec(inv.tds_amount) ?? 0,
+        shipping_charge:            dec(inv.shipping_charge) ?? 0,
+        estimate_number:            inv.estimate_number || null,
+        zoho_sync_status:           'synced',
+        source:                     'zoho',
+        updated_at:                 new Date().toISOString(),
+      })
+    }
+
+    if (rows.length === 0) continue
+
+    const { error } = await supabase
+      .from('invoices')
+      .upsert(rows, { onConflict: 'zoho_invoice_id' })
+
+    if (error) {
+      console.warn(`[invoices] batch upsert failed p${page}: ${error.message} — retrying row-by-row`)
+      for (const row of rows) {
+        const { error: rowErr } = await supabase
+          .from('invoices')
+          .upsert(row, { onConflict: 'zoho_invoice_id' })
+        if (rowErr) {
+          console.warn(`[invoices] row failed ${row.zoho_invoice_id}: ${rowErr.message}`)
+          skipped++
+        } else {
+          upserted++
+        }
+      }
+    } else {
+      upserted += rows.length
+    }
+
+    console.log(`[invoices] page ${page}: +${rows.length} (total: ${upserted})`)
+
+    if (hasMore && Date.now() - startTime > TIME_BUDGET) {
+      stoppedEarly = true
+      console.log(`[invoices] time budget reached after page ${page}`)
+      break
+    }
+  }
+
+  return {
+    invoices_upserted: upserted,
+    invoices_skipped:  skipped,
+    pages_fetched:     pageCount,
+    date_start:        dateStart,
+    has_more:          stoppedEarly,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -805,16 +1148,17 @@ serve(async (req) => {
     return new Response('Method not allowed', { status: 405 })
   }
 
-  let entity: 'locations' | 'items' | 'item_locations' | 'pricebooks' | 'contacts' | 'geocode_locations' | 'all' = 'all'
+  let entity: 'locations' | 'items' | 'item_locations' | 'pricebooks' | 'contacts' | 'geocode_locations' | 'invoices' | 'estimates' | 'all' = 'all'
   let pageFrom   = 1
   let pageTo     = 999
   let itemOffset = 0
   let itemLimit  = 500
   let locationId: string | undefined
+  let days       = 90
 
   try {
     const body = await req.json()
-    if (body?.entity && ['locations', 'items', 'item_locations', 'pricebooks', 'contacts', 'geocode_locations', 'all'].includes(body.entity)) {
+    if (body?.entity && ['locations', 'items', 'item_locations', 'pricebooks', 'contacts', 'geocode_locations', 'invoices', 'estimates', 'all'].includes(body.entity)) {
       entity = body.entity
     }
     if (typeof body?.page_from   === 'number') pageFrom   = body.page_from
@@ -822,6 +1166,7 @@ serve(async (req) => {
     if (typeof body?.item_offset === 'number') itemOffset = body.item_offset
     if (typeof body?.item_limit  === 'number') itemLimit  = body.item_limit
     if (typeof body?.location_id === 'string') locationId = body.location_id
+    if (typeof body?.days        === 'number') days       = body.days
   } catch { /* no body or not JSON — use defaults */ }
 
   const supabase = createClient(
@@ -840,6 +1185,8 @@ serve(async (req) => {
     let pricebooksResult       = null
     let contactsResult         = null
     let geocodeResult          = null
+    let estimatesResult        = null
+    let invoicesResult         = null
 
     if (entity === 'geocode_locations') {
       console.log('Starting standalone geocode pass…')
@@ -877,6 +1224,18 @@ serve(async (req) => {
       console.log('Contacts sync complete:', contactsResult)
     }
 
+    if (entity === 'estimates') {
+      console.log(`Starting estimates initial sync (last ${days} days)…`)
+      estimatesResult = await syncAllEstimates(supabase, token, days)
+      console.log('Estimates sync complete:', estimatesResult)
+    }
+
+    if (entity === 'invoices') {
+      console.log(`Starting invoices initial sync (last ${days} days)…`)
+      invoicesResult = await syncAllInvoices(supabase, token, days)
+      console.log('Invoices sync complete:', invoicesResult)
+    }
+
     const summary = {
       entity,
       started_at:   startedAt,
@@ -887,6 +1246,8 @@ serve(async (req) => {
       ...(itemLocationsResult ? { item_locations: itemLocationsResult } : {}),
       ...(pricebooksResult    ? { pricebooks:     pricebooksResult }    : {}),
       ...(contactsResult      ? { contacts:       contactsResult }      : {}),
+      ...(estimatesResult     ? { estimates:      estimatesResult }     : {}),
+      ...(invoicesResult      ? { invoices:       invoicesResult }      : {}),
     }
 
     return new Response(JSON.stringify(summary), {
