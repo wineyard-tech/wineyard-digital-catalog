@@ -5,6 +5,8 @@ import { cookies } from 'next/headers'
 /**
  * Service-role client for API routes — bypasses RLS.
  * Used by all /api/* route handlers and server-side libs.
+ * Every route must enforce auth/tenant (e.g. requireSession, admin getUser);
+ * never trust client input for row scope. Keep SUPABASE_SERVICE_ROLE_KEY server-only.
  */
 export function createServiceClient() {
   return createSupabaseClient(

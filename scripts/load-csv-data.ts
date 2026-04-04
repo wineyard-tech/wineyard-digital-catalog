@@ -22,9 +22,8 @@ import path from "path";
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
-const SUPABASE_URL = "https://owbceumuadpclzwtwmzx.supabase.co";
-const SUPABASE_SERVICE_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93YmNldW11YWRwY2x6d3R3bXp4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MzU2OTEyNCwiZXhwIjoyMDg5MTQ1MTI0fQ.SliNWuM-yP-WmzKkiA63RpXUHWp5sWu4nL0sniMqcgM";
+const SUPABASE_URL = "https://dftqqioemdwyfzqiyjzr.supabase.co";
+const SUPABASE_SERVICE_KEY = `${process.env.SUPABASE_SERVICE_KEY}`;
 
 const CSV_DIR = path.join(import.meta.dirname, "../.claude");
 const ESTIMATE_CSV = path.join(CSV_DIR, "Estimate.csv");

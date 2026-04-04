@@ -85,6 +85,35 @@ export async function resolvePricebookRates(
   return fetchPricebookRates(supabase, pricebookId)
 }
 
+/** Like resolvePricebookRates but only fetches rows for the given item IDs (smaller query). */
+export async function resolvePricebookRatesForItemIds(
+  supabase: ServiceClient,
+  zohoContactId: string | null,
+  itemIds: string[]
+): Promise<Record<string, number>> {
+  const unique = [...new Set(itemIds.filter(Boolean))]
+  if (unique.length === 0) return {}
+
+  const pricebookId = await resolveEffectivePricebookId(supabase, zohoContactId)
+  if (!pricebookId) return {}
+
+  const { data: pbRows } = await supabase
+    .from('pricebook_items')
+    .select('zoho_item_id, custom_rate')
+    .eq('zoho_pricebook_id', pricebookId)
+    .in('zoho_item_id', unique)
+    .gt('custom_rate', 0)
+
+  if (!pbRows || pbRows.length === 0) return {}
+
+  return Object.fromEntries(
+    (pbRows as { zoho_item_id: string; custom_rate: number }[]).map((p) => [
+      p.zoho_item_id,
+      Number(p.custom_rate),
+    ])
+  )
+}
+
 /**
  * Shapes a raw items row into a CatalogItem, applying pricebook rates where available.
  * Falls back to base_rate when the pricebook has no entry for this item.
