@@ -13,6 +13,7 @@ import { getNearestLocation } from '@/lib/routing'
 import type { EnquiryRequest, CartItem } from '@/types/catalog'
 import type { GeocodedLocation } from '@/lib/routing'
 import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
+import { getPostHogServer } from '@/lib/posthog-node'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -315,9 +316,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
   }
 
-  // ── Fire WhatsApp notifications after response — after() keeps function alive ─
+  // ── Fire analytics + WhatsApp notifications after response ──────────────────
   const estimateId = estimate.id
   after(async () => {
+    // estimate_created — server-side revenue event; does not block the response
+    try {
+      const ph = getPostHogServer()
+      if (ph) {
+        ph.capture({
+          distinctId: session.zoho_contact_id,
+          event: 'estimate_created',
+          properties: {
+            estimate_number: zohoEstimateNumber,
+            zoho_estimate_id: zohoEstimateId,
+            total_amount: total,
+            item_count: body.items.reduce((s, i) => s + i.quantity, 0),
+            wineyard_location: nearestLocationName,
+            contact_phone: session.phone,
+          },
+        })
+        await ph.flush()
+      }
+    } catch (err) {
+      console.error('[enquiry] PostHog capture failed:', err)
+    }
+
     const waResult = await sendEstimateNotification(
       session.phone,
       {
