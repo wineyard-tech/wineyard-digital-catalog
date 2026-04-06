@@ -49,7 +49,7 @@ export function EnquiryCard({ item }: { item: EnquiryListItem }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: '#1A1A2E' }}>{item.doc_number}</span>
         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, ...chip }}>
-          {item.status}
+          {item.status.toUpperCase()}
         </span>
       </div>
 

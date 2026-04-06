@@ -135,7 +135,7 @@ export default function EnquiryDetailPage({
         quantity: li.quantity,
         rate: li.rate,
         tax_percentage: 18 as const,
-        line_total: li.quantity * li.rate,
+        line_total: li.line_total || (li.quantity * li.rate),
         image_url: li.image_url,
       }))
     )
@@ -211,7 +211,7 @@ export default function EnquiryDetailPage({
           <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>{formatDate(data.date)}</p>
         </div>
         <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: chipStyle.bg, color: chipStyle.color }}>
-          {data.status}
+          {data.status.toUpperCase()}
         </span>
       </div>
 
@@ -262,7 +262,7 @@ export default function EnquiryDetailPage({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>Total</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.subtotal)}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.total)}</span>
         </div>
       </div>
 

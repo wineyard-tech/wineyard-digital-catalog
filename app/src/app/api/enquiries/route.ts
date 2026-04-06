@@ -44,12 +44,13 @@ export async function GET(request: NextRequest) {
 
   const items: EnquiryListItem[] = page.map((row) => {
     const lineItems = Array.isArray(row.line_items) ? row.line_items as { quantity: number }[] : []
+    const qtySum = lineItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     return {
       id: row.public_id as string,
       doc_number: row.estimate_number,
       date: row.date ?? row.created_at?.slice(0, 10) ?? '',
       total: row.total,
-      item_count: lineItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+      item_count: qtySum || lineItems.length,
       status: row.status as string,
     }
   })

@@ -91,26 +91,36 @@ export async function GET(
 
     const lineItems: LineItemDetail[] = rawLineItems.map((li) => {
       const resolvedId = li.zoho_item_id || li.item_id || ''
+      const qty = Number(li.quantity) || 0
+      const rawRate = Number(li.rate) || 0
+      const lineTotal = Number(li.line_total ?? li.item_total) || 0
+      // Derive rate from line_total when Zoho stores rate as '' (empty string)
+      const rate = rawRate || (qty > 0 ? lineTotal / qty : 0)
       return {
         zoho_item_id: resolvedId,
         item_name: li.item_name || li.name || '',
         sku: li.sku || '',
-        quantity: Number(li.quantity) || 0,
-        rate: Number(li.rate) || 0,
+        quantity: qty,
+        rate,
         tax_percentage: Number(li.tax_percentage) || 0,
-        line_total: Number(li.line_total ?? li.item_total) || 0,
+        line_total: lineTotal || (qty * rate),
         image_url: imageMap.get(resolvedId) ?? null,
       }
     })
+
+    // Derive subtotal/tax_total from line_items when DB columns are 0 (Zoho list-synced rows)
+    const computedSubtotal = lineItems.reduce((s, li) => s + li.line_total, 0)
+    const subtotal = Number(data.subtotal) || computedSubtotal
+    const taxTotal = Number(data.tax_total) || Math.round(subtotal * 0.18)
 
     const detail: TransactionDetail = {
       kind: 'invoice',
       id: data.zoho_invoice_id,
       doc_number: data.invoice_number,
       date: data.date ?? '',
-      total: data.total,
-      subtotal: data.subtotal ?? 0,
-      tax_total: data.tax_total ?? 0,
+      total: Number(data.total) || (subtotal),
+      subtotal,
+      tax_total: taxTotal,
       line_items: lineItems,
     }
     return NextResponse.json(detail)

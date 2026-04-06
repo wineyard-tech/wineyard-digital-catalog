@@ -99,7 +99,10 @@ export async function GET(
     }
 
     const qty = Number(li.quantity) || 0
-    const rate = Number(li.rate) || 0
+    const rawRate = Number(li.rate) || 0
+    const lineTotal = Number(li.line_total ?? li.item_total) || 0
+    // Derive rate from line_total when Zoho stores rate as '' (empty string)
+    const rate = rawRate || (qty > 0 ? lineTotal / qty : 0)
     return {
       zoho_item_id: resolvedId,
       // Zoho webhook payloads use 'name' not 'item_name'; fall back to items table as authoritative source
@@ -108,14 +111,16 @@ export async function GET(
       quantity: qty,
       rate,
       tax_percentage: Number(li.tax_percentage) || 0,
-      line_total: Number(li.line_total ?? li.item_total) || (rate * qty),
+      line_total: lineTotal || (qty * rate),
       image_url: stock?.image_url ?? null,
       available_stock,
       stock_status,
     }
   })
 
-  const subtotalNum = Number(estimate.subtotal ?? 0)
+  // Derive subtotal from line_items when DB column is 0 (Zoho list-synced or old records)
+  const computedSubtotal = lineItems.reduce((s, li) => s + li.line_total, 0)
+  const subtotalNum = Number(estimate.subtotal ?? 0) || computedSubtotal
   // Derive tax_total from subtotal for old records where it was stored as 0.
   // All new estimates have tax_total = round(subtotal × 0.18) written at creation time.
   const storedTaxTotal = Number(estimate.tax_total ?? 0)

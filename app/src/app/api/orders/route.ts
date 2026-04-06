@@ -302,13 +302,14 @@ export async function GET(request: NextRequest) {
 
   for (const inv of invoices ?? []) {
     const items = Array.isArray(inv.line_items) ? inv.line_items as CartItem[] : []
+    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     unified.push({
       kind: 'invoice',
       id: inv.zoho_invoice_id,
       doc_number: inv.invoice_number,
       date: inv.date ?? '',
       total: inv.total,
-      item_count: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+      item_count: qtySum || items.length,
       status_label: 'Invoiced',
     })
   }
@@ -321,13 +322,14 @@ export async function GET(request: NextRequest) {
     if (estimateNumber && coveredByInvoice.has(estimateNumber)) continue
 
     const items = Array.isArray(ord.line_items) ? ord.line_items as CartItem[] : []
+    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     unified.push({
       kind: 'order',
       id: ord.public_id as string,
       doc_number: ord.salesorder_number,
       date: ord.date ?? (ord.created_at ? ord.created_at.slice(0, 10) : ''),
       total: ord.total,
-      item_count: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
+      item_count: qtySum || items.length,
       status_label: 'Ordered',
     })
   }
