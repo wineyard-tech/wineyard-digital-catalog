@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 // PHASE2_SO_ARCHIVE: import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 // PHASE2_SO_ARCHIVE: import { sendOrderConfirmation, sendAdminAlert } from '@/lib/whatsapp'
 // PHASE2_SO_ARCHIVE: import type { OrderRequest } from '@/types/catalog'
 import type { CartItem } from '@/types/catalog'
+// PHASE2_SO_ARCHIVE: import { getPostHogServer } from '@/lib/posthog-node'
 
 /* PHASE2_SO_ARCHIVE_START
 function buildCartHash(items: CartItem[]): string {
@@ -193,6 +194,28 @@ export async function POST(request: NextRequest) {
   } else {
     console.error('[orders] WhatsApp order confirmation failed:', waResult.error)
   }
+
+  // ── order_placed — server-side revenue event (non-blocking) ─────────────────
+  after(async () => {
+    try {
+      const ph = getPostHogServer()
+      ph.capture({
+        distinctId: session.zoho_contact_id,
+        event: 'order_placed',
+        properties: {
+          salesorder_number: zohoSalesorderNumber,
+          zoho_salesorder_id: zohoSalesorderId,
+          total_amount: total,
+          item_count: body.items.reduce((s, i) => s + i.quantity, 0),
+          contact_phone: session.phone,
+          converted_from_estimate_id: estimateRow?.id ?? null,
+        },
+      })
+      await ph.flush()
+    } catch (err) {
+      console.error('[orders] PostHog capture failed:', err)
+    }
+  })
 
   return NextResponse.json({
     success: true,
