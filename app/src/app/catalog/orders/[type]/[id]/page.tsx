@@ -111,7 +111,7 @@ export default function TransactionDetailPage({
         quantity: li.quantity,
         rate: li.rate,
         tax_percentage: 18 as const,
-        line_total: li.quantity * li.rate,
+        line_total: li.line_total || (li.quantity * li.rate),
         image_url: li.image_url,
       }))
     )

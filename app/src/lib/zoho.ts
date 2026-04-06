@@ -118,6 +118,56 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
 }
 
 /**
+ * Fetches line_items for a Zoho invoice from the detail endpoint.
+ * Used to lazily hydrate invoice rows that were synced from the list endpoint
+ * (which does not include line_items). Returns null on any failure.
+ */
+export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<unknown[] | null> {
+  try {
+    const token = await getAccessToken()
+    const orgId = process.env.ZOHO_ORG_ID!
+    const res = await fetch(
+      `${ZOHO_API_BASE}/invoices/${zohoInvoiceId}?organization_id=${orgId}`,
+      { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+    )
+    if (!res.ok) {
+      console.warn(`[zoho] getZohoInvoiceLineItems: HTTP ${res.status} for invoice ${zohoInvoiceId}`)
+      return null
+    }
+    const data = await res.json()
+    if (!Array.isArray(data.invoice?.line_items)) {
+      console.warn(`[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${data.code}, message=${data.message}`)
+      return null
+    }
+    return data.invoice.line_items
+  } catch (err) {
+    console.warn(`[zoho] getZohoInvoiceLineItems: exception for ${zohoInvoiceId}:`, err)
+    return null
+  }
+}
+
+/**
+ * Fetches line_items for a Zoho estimate from the detail endpoint.
+ * Used to lazily hydrate estimate rows that were synced from the list endpoint
+ * (which does not include line_items). Returns null on any failure.
+ */
+export async function getZohoEstimateLineItems(zohoEstimateId: string): Promise<unknown[] | null> {
+  try {
+    const token = await getAccessToken()
+    const orgId = process.env.ZOHO_ORG_ID!
+    const res = await fetch(
+      `${ZOHO_API_BASE}/estimates/${zohoEstimateId}?organization_id=${orgId}`,
+      { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    return Array.isArray(data.estimate?.line_items) ? data.estimate.line_items : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Creates an estimate in Zoho Books.
  *
  * Pricing strategy: Zoho Estimates API does not accept a pricebook_id at the

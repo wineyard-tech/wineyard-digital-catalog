@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
+import { AuthProvider } from '../contexts/AuthContext'
+import PostHogProvider from '../components/analytics/PostHogProvider'
 import { CartProvider } from '../components/cart/CartContext'
 import { PricingProvider } from '../contexts/PricingContext'
 
@@ -34,11 +36,15 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
-        <PricingProvider>
-          <CartProvider>
-            {children}
-          </CartProvider>
-        </PricingProvider>
+        <AuthProvider>
+          <PostHogProvider>
+            <PricingProvider>
+              <CartProvider>
+                {children}
+              </CartProvider>
+            </PricingProvider>
+          </PostHogProvider>
+        </AuthProvider>
       </body>
     </html>
   )

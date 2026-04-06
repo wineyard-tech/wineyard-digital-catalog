@@ -1,0 +1,42 @@
+[
+  {
+    "event": "product_added_to_cart",
+    "description": "User taps Add to cart on a product card or product detail page",
+    "file": "src/components/catalog/ProductCard.tsx"
+  },
+  {
+    "event": "product_added_to_cart",
+    "description": "User taps Add on the product detail page bottom bar",
+    "file": "src/components/product/ProductDetailClient.tsx"
+  },
+  {
+    "event": "otp_requested",
+    "description": "User successfully requests an OTP on the login page (registered user with catalog access)",
+    "file": "src/app/auth/login/LoginClient.tsx"
+  },
+  {
+    "event": "user_logged_in",
+    "description": "User successfully verifies OTP and is logged in",
+    "file": "src/app/auth/verify/page.tsx"
+  },
+  {
+    "event": "search_performed",
+    "description": "User searches for a product in the catalog or product detail search overlay",
+    "file": "src/components/catalog/SearchBar.tsx"
+  },
+  {
+    "event": "buy_again_viewed",
+    "description": "Authenticated user views the Buy Again page and has past order history (top of re-purchase funnel)",
+    "file": "src/app/catalog/buy-again/page.tsx"
+  },
+  {
+    "event": "reverse_proxy",
+    "description": "Add PostHog reverse proxy rewrites to route /ingest/* through Next.js to avoid ad blockers",
+    "file": "next.config.ts"
+  },
+  {
+    "event": "posthog_init_improved",
+    "description": "Improve PostHog client init with defaults, capture_exceptions, and reverse proxy api_host",
+    "file": "src/components/analytics/PostHogProvider.tsx"
+  }
+]

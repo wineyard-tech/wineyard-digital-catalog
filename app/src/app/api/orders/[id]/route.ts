@@ -1,7 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getZohoInvoiceLineItems } from '@/lib/zoho'
 import type { TransactionDetail, LineItemDetail } from '@/types/catalog'
 
 // ── GET /api/orders/[id] — Transaction detail (invoice or sales order) ────────
@@ -43,18 +44,83 @@ export async function GET(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    const lineItems = Array.isArray(data.line_items)
-      ? (data.line_items as LineItemDetail[])
-      : []
+    // Webhook-synced invoices use Zoho's field names (item_id, name, item_total).
+    // App-created line items use our canonical names (zoho_item_id, item_name, line_total).
+    // Support both by aliasing, then enrich with image_url from the items table.
+    type RawInvoiceLineItem = {
+      zoho_item_id?: string; item_id?: string
+      item_name?: string; name?: string; sku?: string
+      quantity?: number | ''; rate?: number | ''
+      tax_percentage?: number | ''; line_total?: number; item_total?: number | ''
+    }
+
+    let storedLineItems = Array.isArray(data.line_items) ? data.line_items : []
+
+    // line_items is empty when the row was synced from Zoho's list endpoint (which omits them).
+    // Fetch the full detail from Zoho and write back to DB non-blocking so future loads are fast.
+    if (storedLineItems.length === 0) {
+      const zohoItems = await getZohoInvoiceLineItems(data.zoho_invoice_id)
+      if (zohoItems && zohoItems.length > 0) {
+        storedLineItems = zohoItems
+        after(async () => {
+          const sb = createServiceClient()
+          await sb.from('invoices').update({ line_items: zohoItems }).eq('zoho_invoice_id', data.zoho_invoice_id)
+        })
+      }
+    }
+
+    const rawLineItems = storedLineItems as RawInvoiceLineItem[]
+
+    const zohoItemIds = rawLineItems
+      .map((li) => li.zoho_item_id || li.item_id)
+      .filter(Boolean) as string[]
+
+    let imageMap = new Map<string, string | null>()
+    if (zohoItemIds.length > 0) {
+      const { data: itemRows } = await supabase
+        .from('items')
+        .select('zoho_item_id, image_urls')
+        .in('zoho_item_id', zohoItemIds)
+      for (const row of itemRows ?? []) {
+        const url = Array.isArray(row.image_urls) && row.image_urls.length > 0
+          ? (row.image_urls[0] as string)
+          : null
+        imageMap.set(row.zoho_item_id, url)
+      }
+    }
+
+    const lineItems: LineItemDetail[] = rawLineItems.map((li) => {
+      const resolvedId = li.zoho_item_id || li.item_id || ''
+      const qty = Number(li.quantity) || 0
+      const rawRate = Number(li.rate) || 0
+      const lineTotal = Number(li.line_total ?? li.item_total) || 0
+      // Derive rate from line_total when Zoho stores rate as '' (empty string)
+      const rate = rawRate || (qty > 0 ? lineTotal / qty : 0)
+      return {
+        zoho_item_id: resolvedId,
+        item_name: li.item_name || li.name || '',
+        sku: li.sku || '',
+        quantity: qty,
+        rate,
+        tax_percentage: Number(li.tax_percentage) || 0,
+        line_total: lineTotal || (qty * rate),
+        image_url: imageMap.get(resolvedId) ?? null,
+      }
+    })
+
+    // Derive subtotal/tax_total from line_items when DB columns are 0 (Zoho list-synced rows)
+    const computedSubtotal = lineItems.reduce((s, li) => s + li.line_total, 0)
+    const subtotal = Number(data.subtotal) || computedSubtotal
+    const taxTotal = Number(data.tax_total) || Math.round(subtotal * 0.18)
 
     const detail: TransactionDetail = {
       kind: 'invoice',
       id: data.zoho_invoice_id,
       doc_number: data.invoice_number,
       date: data.date ?? '',
-      total: data.total,
-      subtotal: data.subtotal ?? 0,
-      tax_total: data.tax_total ?? 0,
+      total: Number(data.total) || (subtotal),
+      subtotal,
+      tax_total: taxTotal,
       line_items: lineItems,
     }
     return NextResponse.json(detail)

@@ -95,7 +95,10 @@ serve(async (req) => {
           status:           e.status ?? 'draft',
           date:             e.date || null,
           expiry_date:      e.expiry_date || null,
-          line_items:       e.line_items ?? [],
+          // line_items intentionally omitted: Zoho's list endpoint does not return line items.
+          // Omitting preserves any line_items previously written by the webhook handler or
+          // by the detail fetch-and-writeback in the catalog API. New rows get the DB
+          // default ('[]'::jsonb); existing rows keep their current value.
           subtotal:         dec(e.sub_total) ?? 0,
           tax_total:        dec(e.tax_total) ?? 0,
           total:            dec(e.total) ?? 0,

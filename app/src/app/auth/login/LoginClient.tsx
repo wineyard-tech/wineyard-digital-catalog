@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
+import { usePostHog } from 'posthog-js/react'
 import PhoneInput from '@/components/auth/PhoneInput'
 import UnregisteredMessage from '@/components/auth/UnregisteredMessage'
 import CatalogAccessBlockedMessage from '@/components/auth/CatalogAccessBlockedMessage'
@@ -12,6 +13,7 @@ type Step = 'phone' | 'unregistered' | 'no_access'
 
 export default function LoginClient() {
   const router = useRouter()
+  const ph = usePostHog()
   const [step, setStep] = useState<Step>('phone')
   const [phone, setPhone] = useState('')
   const [loading, setLoading] = useState(false)
@@ -45,10 +47,21 @@ export default function LoginClient() {
 
       setPhone(phoneNumber)
       if (data.registered && data.catalogAccess) {
+        ph.capture('otp_requested', {
+          phone_suffix: phoneNumber.slice(-4),
+        })
         router.push(`/auth/verify?phone=${encodeURIComponent(phoneNumber)}`)
       } else if (data.registered && !data.catalogAccess) {
+        ph.capture('auth_failed', {
+          failure_reason: 'catalog_access_disabled',
+          attempted_phone: phoneNumber,
+        })
         setStep('no_access')
       } else {
+        ph.capture('auth_failed', {
+          failure_reason: 'account_not_found',
+          attempted_phone: phoneNumber,
+        })
         setStep('unregistered')
       }
     } catch {

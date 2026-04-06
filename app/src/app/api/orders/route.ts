@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 // PHASE2_SO_ARCHIVE: import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
@@ -7,6 +7,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 // PHASE2_SO_ARCHIVE: import { sendOrderConfirmation, sendAdminAlert } from '@/lib/whatsapp'
 // PHASE2_SO_ARCHIVE: import type { OrderRequest } from '@/types/catalog'
 import type { CartItem } from '@/types/catalog'
+// PHASE2_SO_ARCHIVE: import { getPostHogServer } from '@/lib/posthog-node'
 
 /* PHASE2_SO_ARCHIVE_START
 function buildCartHash(items: CartItem[]): string {
@@ -194,6 +195,28 @@ export async function POST(request: NextRequest) {
     console.error('[orders] WhatsApp order confirmation failed:', waResult.error)
   }
 
+  // ── order_placed — server-side revenue event (non-blocking) ─────────────────
+  after(async () => {
+    try {
+      const ph = getPostHogServer()
+      ph.capture({
+        distinctId: session.zoho_contact_id,
+        event: 'order_placed',
+        properties: {
+          salesorder_number: zohoSalesorderNumber,
+          zoho_salesorder_id: zohoSalesorderId,
+          total_amount: total,
+          item_count: body.items.reduce((s, i) => s + i.quantity, 0),
+          contact_phone: session.phone,
+          converted_from_estimate_id: estimateRow?.id ?? null,
+        },
+      })
+      await ph.flush()
+    } catch (err) {
+      console.error('[orders] PostHog capture failed:', err)
+    }
+  })
+
   return NextResponse.json({
     success: true,
     salesorder_number: zohoSalesorderNumber,
@@ -279,13 +302,14 @@ export async function GET(request: NextRequest) {
 
   for (const inv of invoices ?? []) {
     const items = Array.isArray(inv.line_items) ? inv.line_items as CartItem[] : []
+    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     unified.push({
       kind: 'invoice',
       id: inv.zoho_invoice_id,
       doc_number: inv.invoice_number,
       date: inv.date ?? '',
       total: inv.total,
-      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      item_count: qtySum || items.length,
       status_label: 'Invoiced',
     })
   }
@@ -298,13 +322,14 @@ export async function GET(request: NextRequest) {
     if (estimateNumber && coveredByInvoice.has(estimateNumber)) continue
 
     const items = Array.isArray(ord.line_items) ? ord.line_items as CartItem[] : []
+    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     unified.push({
       kind: 'order',
       id: ord.public_id as string,
       doc_number: ord.salesorder_number,
       date: ord.date ?? (ord.created_at ? ord.created_at.slice(0, 10) : ''),
       total: ord.total,
-      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      item_count: qtySum || items.length,
       status_label: 'Ordered',
     })
   }

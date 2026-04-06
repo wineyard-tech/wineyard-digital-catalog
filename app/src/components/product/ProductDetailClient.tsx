@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { ArrowLeft, Search, Plus, Minus, X } from 'lucide-react'
+import { usePostHog } from 'posthog-js/react'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
@@ -21,6 +22,7 @@ const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 
 export default function ProductDetailClient({ id }: Props) {
   const router = useRouter()
+  const ph = usePostHog()
   const { items, addItem, updateQty } = useCart()
   const [item, setItem] = useState<CatalogItem | null>(null)
   const [fbtItems, setFbtItems] = useState<CatalogItem[]>([])
@@ -88,6 +90,18 @@ export default function ProductDetailClient({ id }: Props) {
       .finally(() => setLoading(false))
   }, [id])
 
+  // Fire product_viewed once item data is available
+  useEffect(() => {
+    if (!item) return
+    ph.capture('product_viewed', {
+      zoho_item_id: item.zoho_item_id,
+      item_name: item.item_name,
+      category: item.category_name,
+      price_shown: item.final_price,
+      price_type: item.price_type,  // 'custom' | 'base' — combined with user_type super-property
+    })
+  }, [item?.zoho_item_id, ph])
+
   useEffect(() => {
     if (!searchQuery.trim()) { setSearchResults([]); return }
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
@@ -113,6 +127,13 @@ export default function ProductDetailClient({ id }: Props) {
       tax_percentage: 18,
       line_total: item.final_price,
       image_url: item.image_url ?? item.category_icon_url,
+    })
+    ph.capture('product_added_to_cart', {
+      zoho_item_id: item.zoho_item_id,
+      item_name: item.item_name,
+      category: item.category_name,
+      price: item.final_price,
+      source: 'product_detail',
     })
   }
 

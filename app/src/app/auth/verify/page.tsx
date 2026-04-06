@@ -4,7 +4,9 @@ import { useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ChevronLeft } from 'lucide-react'
 import Image from 'next/image'
+import { usePostHog } from 'posthog-js/react'
 import OTPInput from '@/components/auth/OTPInput'
+import { useAuthContext } from '@/contexts/AuthContext'
 import type { VerifyOTPResult } from '@/hooks/useAuth'
 
 const DEFAULT_EXPIRES_IN = 600
@@ -13,6 +15,8 @@ function VerifyContent() {
   const router = useRouter()
   const params = useSearchParams()
   const phone = params.get('phone') ?? ''
+  const ph = usePostHog()
+  const { setAuthenticatedUser } = useAuthContext()
 
   useEffect(() => {
     if (!phone) router.replace('/auth/login')
@@ -26,14 +30,33 @@ function VerifyContent() {
     })
     const data = (await res.json()) as {
       success?: boolean
+      user?: { zoho_contact_id: string; contact_name: string; company_name: string | null; phone: string; pricebook_id: string | null }
       attemptsLeft?: number
       error?: string
     }
 
-    if (res.ok && data.success) {
+    if (res.ok && data.success && data.user) {
+      // Identify in PostHog — merges prior guest session history into this profile
+      ph.identify(data.user.zoho_contact_id, {
+        name: data.user.contact_name,
+        phone: data.user.phone,
+        pricebook_id: data.user.pricebook_id,
+      })
+      ph.register({ user_type: 'registered_user' })
+      ph.capture('user_logged_in', {
+        zoho_contact_id: data.user.zoho_contact_id,
+        has_pricebook: data.user.pricebook_id !== null,
+      })
+      // Sync auth state into the shared context without an extra /api/auth/refresh call
+      setAuthenticatedUser(data.user)
       router.replace('/location')
       return
     }
+
+    ph.capture('auth_failed', {
+      failure_reason: 'invalid_otp',
+      attempted_phone: phone,
+    })
 
     // OTP expired: no attemptsLeft in response → treat as locked (0 attempts) so
     // OTPInput shows the error message + Resend button immediately

@@ -17,6 +17,10 @@ const withPWA = withPWAInit({
         handler: 'NetworkOnly',
       },
       {
+        urlPattern: /^https?:\/\/.*\/ingest\//,
+        handler: 'NetworkOnly',
+      },
+      {
         urlPattern: /^https?:\/\/.*\/admin\//,
         handler: 'NetworkOnly',
       },
@@ -50,6 +54,19 @@ const withPWA = withPWAInit({
 
 const nextConfig: NextConfig = {
   turbopack: {},
+  skipTrailingSlashRedirect: true,
+  async rewrites() {
+    return [
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://us-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://us.i.posthog.com/:path*',
+      },
+    ]
+  },
   images: {
     remotePatterns: [
       {

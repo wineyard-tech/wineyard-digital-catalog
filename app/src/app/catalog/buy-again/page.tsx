@@ -1,8 +1,9 @@
 'use client'
 
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
+import posthog from 'posthog-js'
 import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
 import ProductCard from '@/components/catalog/ProductCard'
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
@@ -108,6 +109,7 @@ export default function BuyAgainPage() {
   const [sortMode, setSortMode] = useState<SortMode>('recent')
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryOrder, setCategoryOrder] = useState<Map<string, number>>(new Map())
+  const buyAgainTrackedRef = useRef(false)
 
   // Bestsellers (always shown in the empty/guest state)
   const [bestsellers, setBestsellers] = useState<CatalogItem[]>([])
@@ -134,18 +136,30 @@ export default function BuyAgainPage() {
     }
 
     // Order history
+    let resolvedHasOrders = false
+    let resolvedProductCount = 0
     if (orderRes.status === 'fulfilled') {
       const r = orderRes.value
       if (r.status === 403) {
         setUnauthenticated(true)
       } else if (r.ok) {
         const od = await r.json() as { has_orders: boolean; products: PurchasedProduct[] }
+        resolvedHasOrders = od.has_orders
+        resolvedProductCount = od.products?.length ?? 0
         setHasOrders(od.has_orders)
         if (od.has_orders) setProducts(od.products)
       }
     }
 
     setDataLoading(false)
+
+    if (resolvedHasOrders && !buyAgainTrackedRef.current) {
+      buyAgainTrackedRef.current = true
+      posthog.capture('buy_again_viewed', {
+        total_products: resolvedProductCount,
+        has_orders: true,
+      })
+    }
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])

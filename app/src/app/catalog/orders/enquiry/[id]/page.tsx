@@ -135,7 +135,7 @@ export default function EnquiryDetailPage({
         quantity: li.quantity,
         rate: li.rate,
         tax_percentage: 18 as const,
-        line_total: li.quantity * li.rate,
+        line_total: li.line_total || (li.quantity * li.rate),
         image_url: li.image_url,
       }))
     )
@@ -180,9 +180,12 @@ export default function EnquiryDetailPage({
   }
 
   const statusColors: Record<string, { bg: string; color: string }> = {
-    Pending:   { bg: '#FEF3C7', color: '#92400E' },
-    Converted: { bg: '#D1FAE5', color: '#065F46' },
-    Expired:   { bg: '#F3F4F6', color: '#6B7280' },
+    draft:    { bg: '#F3F4F6', color: '#6B7280' },
+    sent:     { bg: '#FEF3C7', color: '#92400E' },
+    accepted: { bg: '#D1FAE5', color: '#065F46' },
+    invoiced: { bg: '#DBEAFE', color: '#1E40AF' },
+    declined: { bg: '#FEE2E2', color: '#991B1B' },
+    expired:  { bg: '#F3F4F6', color: '#6B7280' },
   }
   const chipStyle = statusColors[data.status] ?? { bg: '#F3F4F6', color: '#6B7280' }
 
@@ -208,7 +211,7 @@ export default function EnquiryDetailPage({
           <p style={{ margin: 0, fontSize: 12, color: '#9CA3AF' }}>{formatDate(data.date)}</p>
         </div>
         <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: chipStyle.bg, color: chipStyle.color }}>
-          {data.status}
+          {data.status.toUpperCase()}
         </span>
       </div>
 
@@ -259,12 +262,12 @@ export default function EnquiryDetailPage({
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #E5E7EB', paddingTop: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1A1A2E' }}>Total</span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.subtotal)}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#059669' }}>{fmt(data.total)}</span>
         </div>
       </div>
 
-      {/* Estimate PDF link */}
-      {data.estimate_url && (
+      {/* Estimate PDF link — only shown once estimate is sent (not while still in draft) */}
+      {data.estimate_url && data.status !== 'draft' && (
         <div style={{ margin: '12px 16px 0', textAlign: 'center' }}>
           <a
             href={data.estimate_url}

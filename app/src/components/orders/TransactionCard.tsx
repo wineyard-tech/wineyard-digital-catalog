@@ -58,7 +58,7 @@ export function TransactionCard({ item }: { item: TransactionListItem }) {
       {/* Row 2: item count + date */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <span style={{ fontSize: 12, color: '#6B7280' }}>
-          {item.item_count} item{item.item_count !== 1 ? 's' : ''}
+          {item.item_count > 0 ? `${item.item_count} item${item.item_count !== 1 ? 's' : ''}` : '—'}
         </span>
         <span style={{ fontSize: 12, color: '#9CA3AF' }}>{formatDate(item.date)}</span>
       </div>

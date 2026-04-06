@@ -4,7 +4,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Minus, Plus, Trash2, MessageCircle, MapPin } from 'lucide-react'
 import Image from 'next/image'
+import { usePostHog } from 'posthog-js/react'
 import { useCart } from './CartContext'
+import { useAuthContext } from '@/contexts/AuthContext'
 import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, CartItem } from '@/types/catalog'
 
@@ -18,21 +20,6 @@ const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56"><rect width="56" height="56" fill="#F3F4F6"/><text x="28" y="34" text-anchor="middle" fill="#9CA3AF" font-size="22">📷</text></svg>`
 )}`
 
-interface AuthState {
-  authenticated: boolean
-  contact_name?: string
-}
-
-/** Dedupes /api/me across React Strict Mode double-mount (dev) — one network request per page load. */
-let authStatePromise: Promise<AuthState> | null = null
-function fetchAuthStateOnce(): Promise<AuthState> {
-  if (!authStatePromise) {
-    authStatePromise = fetch('/api/me')
-      .then((r) => r.json() as Promise<AuthState>)
-      .catch(() => ({ authenticated: false }))
-  }
-  return authStatePromise
-}
 
 interface EstimateBanner {
   public_id: string          // UUID — passed as estimate_id when placing order
@@ -45,14 +32,16 @@ export default function CartPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { items, subtotal, updateQty, removeItem, clearCart, loadItems } = useCart()
+  const { isAuthenticated } = useAuthContext()
+  const ph = usePostHog()
 
   const [loading, setLoading] = useState(false)
   const quotingRef = useRef(false)  // ghost-click guard for handleGetQuote
+  const quoteRequestedRef = useRef(false)  // tracks if quote_requested fired this session
   // PHASE2_SO_ARCHIVE: const [orderLoading, setOrderLoading] = useState(false)
   const [quoteResult, setQuoteResult] = useState<EnquiryResponse | null>(null)
   // PHASE2_SO_ARCHIVE: const [orderResult, setOrderResult] = useState<OrderResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [authState, setAuthState] = useState<AuthState | null>(null)
   const [showRegModal, setShowRegModal] = useState(false)
   const [estimateBanner, setEstimateBanner] = useState<EstimateBanner | null>(null)
   const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
@@ -91,10 +80,47 @@ export default function CartPage() {
   const total = subtotal  // tax shown as a line item; "To Pay" = subtotal (pre-tax)
   const itemCount = items.reduce((s, i) => s + i.quantity, 0)
 
-  // ── Check auth state on mount ─────────────────────────────────────────────
+  // ── cart_viewed: fire on mount and whenever subtotal changes ─────────────
+  const lastTrackedSubtotalRef = useRef<number | null>(null)
   useEffect(() => {
-    fetchAuthStateOnce().then(setAuthState)
-  }, [])
+    if (items.length === 0) {
+      // Reset so a new cart session after clearCart fires cart_viewed again
+      lastTrackedSubtotalRef.current = null
+      return
+    }
+    if (lastTrackedSubtotalRef.current === subtotal) return
+    lastTrackedSubtotalRef.current = subtotal
+    ph.capture('cart_viewed', {
+      total_value: subtotal,
+      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      user_location: deliveryArea,
+      nearest_warehouse: warehouseName,
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal, items.length])
+
+  // ── cart_abandoned: fire on session kill if cart has items and no quote sent ─
+  useEffect(() => {
+    function handleAbandon() {
+      if (document.visibilityState !== 'hidden') return
+      if (items.length === 0 || quoteRequestedRef.current) return
+      const alreadyQuoted = localStorage.getItem('wineyard_cart_quoted') === '1'
+      if (alreadyQuoted) return
+      ph.capture('cart_abandoned', {
+        item_count: items.reduce((s, i) => s + i.quantity, 0),
+        total_value: subtotal,
+        user_location: deliveryArea,
+        nearest_warehouse: warehouseName,
+      })
+    }
+    document.addEventListener('visibilitychange', handleAbandon)
+    window.addEventListener('pagehide', handleAbandon)
+    return () => {
+      document.removeEventListener('visibilitychange', handleAbandon)
+      window.removeEventListener('pagehide', handleAbandon)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, subtotal, deliveryArea, warehouseName])
 
   // ── Handle deep link: ?estimate_id=<uuid> ────────────────────────────────
   useEffect(() => {
@@ -118,7 +144,7 @@ export default function CartPage() {
   }, [])
 
   function requireAuth(onSuccess: () => void) {
-    if (!authState?.authenticated) {
+    if (!isAuthenticated) {
       setShowRegModal(true)
       fetch('/api/admin-alert', {
         method: 'POST',
@@ -133,6 +159,17 @@ export default function CartPage() {
   async function handleGetQuote() {
     if (quotingRef.current) return  // ghost-click guard
     requireAuth(async () => {
+      // Fire quote_requested BEFORE the API call — captures intent even if API fails
+      ph.capture('quote_requested', {
+        total_amount: subtotal,
+        item_count: items.reduce((s, i) => s + i.quantity, 0),
+        user_location: deliveryArea,
+        nearest_warehouse: warehouseName,
+        zoho_contact_id: undefined,  // super-property user_type covers identity
+      })
+      quoteRequestedRef.current = true
+      localStorage.setItem('wineyard_cart_quoted', '1')
+
       quotingRef.current = true
       setLoading(true)
       setError(null)
@@ -151,6 +188,7 @@ export default function CartPage() {
         if (!res.ok || !data.success) throw new Error(data.error ?? 'Failed to submit enquiry')
         setQuoteResult(data)
         clearCart()
+        localStorage.removeItem('wineyard_cart_quoted')
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
       } finally {
@@ -407,7 +445,7 @@ export default function CartPage() {
           </p>
         )}
 
-        {authState && !authState.authenticated && (
+        {!isAuthenticated && (
           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#9CA3AF', textAlign: 'center' }}>
             Registration required to request quotes
           </p>
@@ -419,7 +457,7 @@ export default function CartPage() {
             onClick={handleGetQuote}
             disabled={isButtonDisabled}
             className={loading ? 'btn-loading' : undefined}
-            title={!authState?.authenticated ? 'Registration Required' : undefined}
+            title={!isAuthenticated ? 'Registration Required' : undefined}
             style={{
               width: '100%',
               background: '#FFFFFF',
@@ -446,7 +484,7 @@ export default function CartPage() {
           <button
             onClick={handlePlaceOrder}
             disabled={isButtonDisabled}
-            title={!authState?.authenticated ? 'Registration Required' : undefined}
+            title={!isAuthenticated ? 'Registration Required' : undefined}
             style={{
               flex: 1,
               background: isButtonDisabled ? '#D1D5DB' : '#059669',

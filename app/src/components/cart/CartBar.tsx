@@ -1,6 +1,6 @@
 'use client'
 
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { useCart } from './CartContext'
 
 const THUMB_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -12,8 +12,10 @@ interface CartBarProps { bottom?: number }
 export default function CartBar({ bottom = 76 }: CartBarProps) {
   const { items, itemCount } = useCart()
   const router = useRouter()
+  const pathname = usePathname()
 
-  if (itemCount === 0) return null
+  // Hide on Orders tab and all Estimate/Invoice detail pages
+  if (itemCount === 0 || pathname.startsWith('/catalog/orders')) return null
 
   const thumbnails = items.slice(0, 3)
 
