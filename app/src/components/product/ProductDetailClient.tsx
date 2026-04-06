@@ -128,6 +128,13 @@ export default function ProductDetailClient({ id }: Props) {
       line_total: item.final_price,
       image_url: item.image_url ?? item.category_icon_url,
     })
+    ph.capture('product_added_to_cart', {
+      zoho_item_id: item.zoho_item_id,
+      item_name: item.item_name,
+      category: item.category_name,
+      price: item.final_price,
+      source: 'product_detail',
+    })
   }
 
   /* ── Loading ── */

@@ -4,6 +4,7 @@ import Image from 'next/image'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Plus, Minus } from 'lucide-react'
+import posthog from 'posthog-js'
 import type { CatalogItem } from '@/types/catalog'
 import { useCart } from '../cart/CartContext'
 
@@ -45,6 +46,13 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
       tax_percentage: 18,
       line_total: item.final_price,
       image_url: item.image_url ?? item.category_icon_url,
+    })
+    posthog.capture('product_added_to_cart', {
+      zoho_item_id: item.zoho_item_id,
+      item_name: item.item_name,
+      category: item.category_name,
+      price: item.final_price,
+      source: 'product_card',
     })
   }
 

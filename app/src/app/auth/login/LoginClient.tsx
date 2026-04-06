@@ -47,6 +47,9 @@ export default function LoginClient() {
 
       setPhone(phoneNumber)
       if (data.registered && data.catalogAccess) {
+        ph.capture('otp_requested', {
+          phone_suffix: phoneNumber.slice(-4),
+        })
         router.push(`/auth/verify?phone=${encodeURIComponent(phoneNumber)}`)
       } else if (data.registered && !data.catalogAccess) {
         ph.capture('auth_failed', {

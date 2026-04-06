@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Search } from 'lucide-react'
+import posthog from 'posthog-js'
 
 interface SearchBarProps {
   onSearch: (query: string) => void
@@ -16,7 +17,11 @@ export default function SearchBar({ onSearch, placeholder = 'Search products, SK
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => {
-      onSearch(value.trim())
+      const trimmed = value.trim()
+      onSearch(trimmed)
+      if (trimmed) {
+        posthog.capture('search_performed', { query: trimmed })
+      }
     }, 300)
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current)

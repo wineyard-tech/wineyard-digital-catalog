@@ -43,6 +43,10 @@ function VerifyContent() {
         pricebook_id: data.user.pricebook_id,
       })
       ph.register({ user_type: 'registered_user' })
+      ph.capture('user_logged_in', {
+        zoho_contact_id: data.user.zoho_contact_id,
+        has_pricebook: data.user.pricebook_id !== null,
+      })
       // Sync auth state into the shared context without an extra /api/auth/refresh call
       setAuthenticatedUser(data.user)
       router.replace('/location')
