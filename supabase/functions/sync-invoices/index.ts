@@ -108,7 +108,10 @@ serve(async (req) => {
           is_discount_before_tax:     inv.is_discount_before_tax ?? true,
           entity_discount_percent:    dec(inv.entity_discount_percent) ?? 0,
           is_inclusive_tax:           inv.is_inclusive_tax ?? true,
-          line_items:                 inv.line_items ?? [],
+          // line_items intentionally omitted: Zoho's list endpoint does not return line items.
+          // Omitting preserves any line_items previously written by the webhook handler or
+          // by the detail fetch-and-writeback in the catalog API. New rows get the DB
+          // default ('[]'::jsonb); existing rows keep their current value.
           subtotal:                   dec(inv.sub_total) ?? 0,
           tax_total:                  dec(inv.tax_total) ?? 0,
           total:                      dec(inv.total) ?? 0,

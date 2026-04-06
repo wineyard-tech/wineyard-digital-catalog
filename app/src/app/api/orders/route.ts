@@ -308,7 +308,7 @@ export async function GET(request: NextRequest) {
       doc_number: inv.invoice_number,
       date: inv.date ?? '',
       total: inv.total,
-      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      item_count: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
       status_label: 'Invoiced',
     })
   }
@@ -327,7 +327,7 @@ export async function GET(request: NextRequest) {
       doc_number: ord.salesorder_number,
       date: ord.date ?? (ord.created_at ? ord.created_at.slice(0, 10) : ''),
       total: ord.total,
-      item_count: items.reduce((s, i) => s + i.quantity, 0),
+      item_count: items.reduce((s, i) => s + (Number(i.quantity) || 0), 0),
       status_label: 'Ordered',
     })
   }

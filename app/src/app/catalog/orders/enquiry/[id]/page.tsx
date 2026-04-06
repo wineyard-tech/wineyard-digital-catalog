@@ -180,9 +180,12 @@ export default function EnquiryDetailPage({
   }
 
   const statusColors: Record<string, { bg: string; color: string }> = {
-    Pending:   { bg: '#FEF3C7', color: '#92400E' },
-    Converted: { bg: '#D1FAE5', color: '#065F46' },
-    Expired:   { bg: '#F3F4F6', color: '#6B7280' },
+    draft:    { bg: '#F3F4F6', color: '#6B7280' },
+    sent:     { bg: '#FEF3C7', color: '#92400E' },
+    accepted: { bg: '#D1FAE5', color: '#065F46' },
+    invoiced: { bg: '#DBEAFE', color: '#1E40AF' },
+    declined: { bg: '#FEE2E2', color: '#991B1B' },
+    expired:  { bg: '#F3F4F6', color: '#6B7280' },
   }
   const chipStyle = statusColors[data.status] ?? { bg: '#F3F4F6', color: '#6B7280' }
 
@@ -263,8 +266,8 @@ export default function EnquiryDetailPage({
         </div>
       </div>
 
-      {/* Estimate PDF link */}
-      {data.estimate_url && (
+      {/* Estimate PDF link — only shown once estimate is sent (not while still in draft) */}
+      {data.estimate_url && data.status !== 'draft' && (
         <div style={{ margin: '12px 16px 0', textAlign: 'center' }}>
           <a
             href={data.estimate_url}

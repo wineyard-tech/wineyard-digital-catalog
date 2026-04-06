@@ -126,7 +126,8 @@ export interface TransactionDetail {
   line_items: LineItemDetail[];
 }
 
-export type EnquiryStatus = 'Pending' | 'Converted' | 'Expired'
+// Raw Zoho Books estimate statuses — no app-level translation applied
+export type EnquiryStatus = 'draft' | 'sent' | 'accepted' | 'declined' | 'invoiced' | 'expired' | (string & {})
 
 export interface EnquiryListItem {
   id: string;
@@ -155,7 +156,7 @@ export interface EnquiryDetail {
   total: number;
   subtotal: number;
   tax_total: number;
-  status: EnquiryStatus;
+  status: string;
   estimate_id: string;
   estimate_url?: string | null;
   line_items: EnquiryLineItemDetail[];

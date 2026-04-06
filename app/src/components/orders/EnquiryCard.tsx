@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation'
 import type { CSSProperties } from 'react'
-import type { EnquiryListItem, EnquiryStatus } from '@/types/catalog'
+import type { EnquiryListItem } from '@/types/catalog'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -13,10 +13,13 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-const chipStyle: Record<EnquiryStatus, CSSProperties> = {
-  Pending:   { background: '#FEF3C7', color: '#92400E' },
-  Converted: { background: '#D1FAE5', color: '#065F46' },
-  Expired:   { background: '#F3F4F6', color: '#6B7280' },
+const chipStyle: Record<string, CSSProperties> = {
+  draft:    { background: '#F3F4F6', color: '#6B7280' },
+  sent:     { background: '#FEF3C7', color: '#92400E' },
+  accepted: { background: '#D1FAE5', color: '#065F46' },
+  invoiced: { background: '#DBEAFE', color: '#1E40AF' },
+  declined: { background: '#FEE2E2', color: '#991B1B' },
+  expired:  { background: '#F3F4F6', color: '#6B7280' },
 }
 
 export function EnquiryCard({ item }: { item: EnquiryListItem }) {
@@ -26,7 +29,7 @@ export function EnquiryCard({ item }: { item: EnquiryListItem }) {
     router.push(`/catalog/orders/enquiry/${item.id}`)
   }
 
-  const chip = chipStyle[item.status]
+  const chip = chipStyle[item.status] ?? { background: '#F3F4F6', color: '#6B7280' }
 
   return (
     <div
@@ -53,7 +56,7 @@ export function EnquiryCard({ item }: { item: EnquiryListItem }) {
       {/* Row 2: item count + date */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <span style={{ fontSize: 12, color: '#6B7280' }}>
-          {item.item_count} item{item.item_count !== 1 ? 's' : ''}
+          {item.item_count > 0 ? `${item.item_count} item${item.item_count !== 1 ? 's' : ''}` : '—'}
         </span>
         <span style={{ fontSize: 12, color: '#9CA3AF' }}>{formatDate(item.date)}</span>
       </div>
