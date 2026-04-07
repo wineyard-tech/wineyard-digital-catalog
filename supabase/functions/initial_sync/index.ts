@@ -238,7 +238,7 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
         return {
           zoho_category_id: id,
           category_name:    name,
-          display_order:    categoryOrderMap.get(id)!,
+          // display_order:    categoryOrderMap.get(id)!, // ignore category order for now
         }
       })
       const { error: catErr } = await supabase
