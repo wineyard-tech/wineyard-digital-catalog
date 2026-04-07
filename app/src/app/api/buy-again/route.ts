@@ -78,32 +78,29 @@ export async function GET(request: NextRequest) {
   const productMap = new Map<string, { last_purchased_at: string; total_qty: number; order_count: number }>()
 
   for (const order of allOrders) {
+    const dateStr =
+      typeof order.created_at === 'string'
+        ? order.created_at
+        : order.created_at != null
+          ? new Date(order.created_at as string | Date).toISOString()
+          : ''
     const lineItems = Array.isArray(order.line_items) ? (order.line_items as CartItem[]) : []
     for (const item of lineItems) {
       if (!item.zoho_item_id) continue
+      const qty = Number(item.quantity) || 0
       const existing = productMap.get(item.zoho_item_id)
       if (existing) {
         if (dateStr > existing.last_purchased_at) existing.last_purchased_at = dateStr
-        existing.total_qty += item.quantity
+        existing.total_qty += qty
         existing.order_count++
       } else {
         productMap.set(item.zoho_item_id, {
           last_purchased_at: dateStr,
-          total_qty: item.quantity,
+          total_qty: qty,
           order_count: 1,
         })
       }
     }
-  }
-
-  for (const inv of invoicesResult.data ?? []) {
-    accumulateLineItems(Array.isArray(inv.line_items) ? (inv.line_items as CartItem[]) : [], inv.date ?? '')
-  }
-  for (const est of estimatesResult.data ?? []) {
-    accumulateLineItems(Array.isArray(est.line_items) ? (est.line_items as CartItem[]) : [], est.created_at ?? '')
-  }
-  for (const ord of ordersResult.data ?? []) {
-    accumulateLineItems(Array.isArray(ord.line_items) ? (ord.line_items as CartItem[]) : [], ord.created_at ?? '')
   }
 
   // ── 3. No order history → return bestsellers ───────────────────────────────
