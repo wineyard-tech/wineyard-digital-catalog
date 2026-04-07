@@ -33,43 +33,62 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // ── 1. Fetch last 50 orders with full line_items ───────────────────────────
-  const { data: orders, error: ordersError } = await supabase
-    .from('sales_orders')
-    .select('line_items, created_at')
-    .eq('zoho_contact_id', session.zoho_contact_id)
-    .neq('zoho_sync_status', 'failed')
-    .order('created_at', { ascending: false })
-    .limit(50)
+  // ── 1. Fetch purchase history from invoices, estimates, and sales_orders ──
+  const [invoicesResult, estimatesResult, ordersResult] = await Promise.all([
+    supabase
+      .from('invoices')
+      .select('line_items, date')
+      .eq('zoho_contact_id', session.zoho_contact_id)
+      .order('date', { ascending: false })
+      .limit(100),
+    supabase
+      .from('estimates')
+      .select('line_items, created_at')
+      .eq('zoho_contact_id', session.zoho_contact_id)
+      .order('created_at', { ascending: false })
+      .limit(100),
+    supabase
+      .from('sales_orders')
+      .select('line_items, created_at')
+      .eq('zoho_contact_id', session.zoho_contact_id)
+      .order('created_at', { ascending: false })
+      .limit(100),
+  ])
 
-  if (ordersError) {
-    console.error('[buy-again] orders fetch error:', ordersError)
-    return NextResponse.json({ error: 'Failed to load order history' }, { status: 500 })
-  }
+  if (invoicesResult.error) console.error('[buy-again] invoices fetch error:', invoicesResult.error)
+  if (estimatesResult.error) console.error('[buy-again] estimates fetch error:', estimatesResult.error)
+  if (ordersResult.error) console.error('[buy-again] orders fetch error:', ordersResult.error)
 
-  // ── 2. Aggregate products across all orders ────────────────────────────────
-  // Track per-product: latest order date, cumulative qty, and order count.
+  // ── 2. Aggregate products across all sources ───────────────────────────────
+  // Track per-product: latest purchase date, cumulative qty, and order count.
   const productMap = new Map<string, { last_purchased_at: string; total_qty: number; order_count: number }>()
 
-  for (const order of orders ?? []) {
-    const lineItems = Array.isArray(order.line_items) ? (order.line_items as CartItem[]) : []
+  function accumulateLineItems(lineItems: CartItem[], dateStr: string) {
     for (const item of lineItems) {
       if (!item.zoho_item_id) continue
       const existing = productMap.get(item.zoho_item_id)
       if (existing) {
-        if (order.created_at > existing.last_purchased_at) {
-          existing.last_purchased_at = order.created_at
-        }
+        if (dateStr > existing.last_purchased_at) existing.last_purchased_at = dateStr
         existing.total_qty += item.quantity
         existing.order_count++
       } else {
         productMap.set(item.zoho_item_id, {
-          last_purchased_at: order.created_at,
+          last_purchased_at: dateStr,
           total_qty: item.quantity,
           order_count: 1,
         })
       }
     }
+  }
+
+  for (const inv of invoicesResult.data ?? []) {
+    accumulateLineItems(Array.isArray(inv.line_items) ? (inv.line_items as CartItem[]) : [], inv.date ?? '')
+  }
+  for (const est of estimatesResult.data ?? []) {
+    accumulateLineItems(Array.isArray(est.line_items) ? (est.line_items as CartItem[]) : [], est.created_at ?? '')
+  }
+  for (const ord of ordersResult.data ?? []) {
+    accumulateLineItems(Array.isArray(ord.line_items) ? (ord.line_items as CartItem[]) : [], ord.created_at ?? '')
   }
 
   // ── 3. No order history → return bestsellers ───────────────────────────────
