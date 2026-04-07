@@ -78,7 +78,7 @@ function applySortMode(products: PurchasedProduct[], mode: SortMode): PurchasedP
 export default function BuyAgainPage() {
   const router = useRouter()
   const hidden = useScrollDirection()
-  const { user, isAuthenticated } = useAuth()
+  const { user, loading: authLoading, isAuthenticated } = useAuth()
 
   // Location area from wl cookie (same as CatalogClient)
   const [locationArea, setLocationArea] = useState<string | null>(null)
@@ -162,7 +162,33 @@ export default function BuyAgainPage() {
     }
   }, [])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  const fetchPublicData = useCallback(async () => {
+    const [bestRes, catRes] = await Promise.allSettled([
+      fetch('/api/bestsellers'),
+      fetch('/api/categories'),
+    ])
+    if (catRes.status === 'fulfilled' && catRes.value.ok) {
+      const cd = await catRes.value.json() as { categories: { category_name: string; display_order: number }[] }
+      const m = new Map<string, number>()
+      for (const c of cd.categories ?? []) m.set(c.category_name, c.display_order)
+      setCategoryOrder(m)
+    }
+    if (bestRes.status === 'fulfilled' && bestRes.value.ok) {
+      const bd = await bestRes.value.json() as { items: CatalogItem[] }
+      setBestsellers(bd.items ?? [])
+    }
+    setUnauthenticated(true)
+    setDataLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (authLoading) return
+    if (!isAuthenticated) {
+      fetchPublicData()
+      return
+    }
+    fetchData()
+  }, [authLoading, isAuthenticated, fetchData, fetchPublicData])
 
   // ── Derived search state ──────────────────────────────────────────────────────
   const trimmedQuery = searchQuery.trim()
