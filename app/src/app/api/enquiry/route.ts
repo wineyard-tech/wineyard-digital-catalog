@@ -246,6 +246,27 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Zoho Books Create Estimate: location_id is required when the org has multiple locations.
+  // Without coords we still must send a valid warehouse id (default or ZOHO_DEFAULT_LOCATION_ID).
+  if (!nearestLocationId) {
+    const { data: activeLocs } = await supabase
+      .from('locations')
+      .select('zoho_location_id, location_name, phone')
+      .eq('status', 'active')
+      .order('location_name', { ascending: true })
+
+    if (activeLocs && activeLocs.length > 1) {
+      const preferred = process.env.ZOHO_DEFAULT_LOCATION_ID?.trim()
+      const match = preferred
+        ? activeLocs.find((l) => l.zoho_location_id === preferred)
+        : undefined
+      const row = match ?? activeLocs[0]
+      nearestLocationId = row.zoho_location_id
+      nearestLocationName = row.location_name ?? null
+      nearestLocationPhone = row.phone ?? null
+    }
+  }
+
   // ── Create estimate in Zoho Books first (Zoho owns the number) ───────────
   let zohoEstimateId: string
   let zohoEstimateNumber: string
@@ -261,7 +282,10 @@ export async function POST(request: NextRequest) {
     zohoEstimateNumber = zohoRes.estimate.estimate_number
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[enquiry] Zoho estimate creation failed:', msg)
+    console.error('[enquiry] Zoho estimate creation failed', {
+      route: 'POST /api/enquiry',
+      message: msg,
+    })
     void sendAdminAlert(
       `⚠️ Zoho estimate creation failed\n` +
       `Contact: ${session.contact_name} (${session.phone})\n` +
