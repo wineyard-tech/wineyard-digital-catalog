@@ -196,8 +196,15 @@ export async function createEstimate(
     `GST @18% (CGST 9% + SGST 9%): ₹${gstAmount.toLocaleString('en-IN')} — applicable on final invoice`
   const notesText = [gstNote, options?.notes].filter(Boolean).join('\n')
 
+  // Zoho Books India requires `date` in YYYY-MM-DD; omitting it causes "Invalid time format"
+  // (error code 13) when Zoho tries to derive the date from org timezone settings.
+  const today = new Date().toISOString().slice(0, 10)
+  const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
   const body = {
     customer_id: contactId,
+    date: today,
+    expiry_date: expiry,
     // tax_treatment: 'out_of_scope' prevents Zoho org-level default taxes from inflating
     // the estimate total — Total = Subtotal in the Zoho portal, matching the app.
     // GST info is surfaced via the notes field above instead of Zoho's tax engine.
