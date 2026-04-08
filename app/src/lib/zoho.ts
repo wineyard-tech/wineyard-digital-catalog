@@ -5,21 +5,34 @@ import type { CartItem } from '@/types/catalog'
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'
 
-/** Zoho Books `date` / `expiry_date` expect YYYY-MM-DD per API docs — use org timezone, not UTC midnight. */
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Zoho Books `date` / `expiry_date` expect yyyy-MM-dd (API docs).
+ * Use `sv-SE` + `.format()` — stable YYYY-MM-DD across Node/ICU (Vercel Linux vs macOS).
+ * `en-CA` + formatToParts has produced values Zoho rejects as "Invalid time format" on some runtimes.
+ */
 function formatOrgDateYmd(d: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(d)
-  const y = parts.find((p) => p.type === 'year')?.value
-  const m = parts.find((p) => p.type === 'month')?.value
-  const day = parts.find((p) => p.type === 'day')?.value
-  if (!y || !m || !day) {
-    return d.toISOString().slice(0, 10)
+  const tz = (timeZone ?? '').trim() || 'Asia/Kolkata'
+  const fmt = (zone: string): string =>
+    new Intl.DateTimeFormat('sv-SE', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+
+  try {
+    const s = fmt(tz)
+    if (YMD_RE.test(s)) return s
+  } catch {
+    // invalid IANA time zone string
   }
-  return `${y}-${m}-${day}`
+
+  const fallback = fmt('Asia/Kolkata')
+  if (YMD_RE.test(fallback)) return fallback
+
+  return d.toISOString().slice(0, 10)
 }
 
 /** Rich error string for logs (Vercel): surfaces Zoho JSON `code` / `message` when present. */
