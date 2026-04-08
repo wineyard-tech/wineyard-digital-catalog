@@ -57,8 +57,51 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient()
 
+  // #region agent log
+  {
+    const zohoIds = body.items.map((i) => i.zoho_item_id).filter(Boolean)
+    const uniqueZoho = new Set(zohoIds).size
+    fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
+      body: JSON.stringify({
+        sessionId: 'cdbdb9',
+        runId: 'pre-pricing',
+        hypothesisId: 'H3',
+        location: 'api/enquiry/route.ts:POST',
+        message: 'cart shape before buildServerEnquiryLineItems',
+        data: {
+          itemLines: body.items.length,
+          zohoIdsNonEmpty: zohoIds.length,
+          uniqueZohoItemIds: uniqueZoho,
+          duplicateLines: body.items.length !== uniqueZoho,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }
+  // #endregion
+
   // ── Server-side pricing (ignore client rate / line_total) ─────────────────
   const priced = await buildServerEnquiryLineItems(supabase, session.zoho_contact_id, body.items)
+  // #region agent log
+  fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
+    body: JSON.stringify({
+      sessionId: 'cdbdb9',
+      runId: 'post-pricing',
+      hypothesisId: 'H1',
+      location: 'api/enquiry/route.ts:POST',
+      message: 'buildServerEnquiryLineItems result',
+      data: {
+        ok: priced.ok,
+        error: priced.ok ? null : priced.error,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
   if (!priced.ok) {
     return NextResponse.json({ error: priced.message }, { status: 400 })
   }
@@ -271,6 +314,25 @@ export async function POST(request: NextRequest) {
   let zohoEstimateId: string
   let zohoEstimateNumber: string
 
+  // #region agent log
+  fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
+    body: JSON.stringify({
+      sessionId: 'cdbdb9',
+      runId: 'pre-zoho',
+      hypothesisId: 'H2',
+      location: 'api/enquiry/route.ts:POST',
+      message: 'before createEstimate',
+      data: {
+        hasLocationId: Boolean(nearestLocationId),
+        lineCount: body.items.length,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
+
   try {
     const zohoRes = await withOneRetry(() =>
       createEstimate(session.zoho_contact_id, body.items, {
@@ -282,6 +344,23 @@ export async function POST(request: NextRequest) {
     zohoEstimateNumber = zohoRes.estimate.estimate_number
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    // #region agent log
+    fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
+      body: JSON.stringify({
+        sessionId: 'cdbdb9',
+        runId: 'zoho-error',
+        hypothesisId: 'H2',
+        location: 'api/enquiry/route.ts:POST',
+        message: 'createEstimate threw',
+        data: {
+          errPrefix: msg.slice(0, 120),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
     console.error('[enquiry] Zoho estimate creation failed', {
       route: 'POST /api/enquiry',
       message: msg,

@@ -5,21 +5,34 @@ import type { CartItem } from '@/types/catalog'
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'
 
-/** Zoho Books `date` / `expiry_date` expect YYYY-MM-DD per API docs — use org timezone, not UTC midnight. */
+const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Zoho Books `date` / `expiry_date` expect yyyy-MM-dd (API docs).
+ * Use `sv-SE` + `.format()` — stable YYYY-MM-DD across Node/ICU (Vercel Linux vs macOS).
+ * `en-CA` + formatToParts has produced values Zoho rejects as "Invalid time format" on some runtimes.
+ */
 function formatOrgDateYmd(d: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(d)
-  const y = parts.find((p) => p.type === 'year')?.value
-  const m = parts.find((p) => p.type === 'month')?.value
-  const day = parts.find((p) => p.type === 'day')?.value
-  if (!y || !m || !day) {
-    return d.toISOString().slice(0, 10)
+  const tz = (timeZone ?? '').trim() || 'Asia/Kolkata'
+  const fmt = (zone: string): string =>
+    new Intl.DateTimeFormat('sv-SE', {
+      timeZone: zone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d)
+
+  try {
+    const s = fmt(tz)
+    if (YMD_RE.test(s)) return s
+  } catch {
+    // invalid IANA time zone string
   }
-  return `${y}-${m}-${day}`
+
+  const fallback = fmt('Asia/Kolkata')
+  if (YMD_RE.test(fallback)) return fallback
+
+  return d.toISOString().slice(0, 10)
 }
 
 /** Rich error string for logs (Vercel): surfaces Zoho JSON `code` / `message` when present. */
@@ -226,6 +239,30 @@ export async function createEstimate(
   const now = new Date()
   const today = formatOrgDateYmd(now, orgTz)
   const expiry = formatOrgDateYmd(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), orgTz)
+
+  console.info('[zoho] createEstimate date fields', { orgTz, today, expiry })
+
+  // #region agent log
+  fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
+    body: JSON.stringify({
+      sessionId: 'cdbdb9',
+      runId: 'post-fix',
+      hypothesisId: 'H4',
+      location: 'lib/zoho.ts:createEstimate',
+      message: 'Zoho estimate payload meta',
+      data: {
+        orgTz,
+        today,
+        expiry,
+        lineCount: lineItems.length,
+        hasLocationId: Boolean(options?.locationId),
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+  // #endregion
 
   const body = {
     customer_id: contactId,
