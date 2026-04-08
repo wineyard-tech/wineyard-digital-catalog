@@ -17,7 +17,7 @@ function TabContent() {
   }
 
   return (
-    <main style={{ paddingBottom: 100 }}>
+    <main style={{ minHeight: '100dvh', background: '#F8FAFB', paddingBottom: 100 }}>
       {/* Page header */}
       <div style={{
         padding: '16px 16px 0',
