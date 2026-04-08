@@ -9,7 +9,10 @@ import { useCart } from './CartContext'
 import { useAuthContext } from '@/contexts/AuthContext'
 import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, CartItem } from '@/types/catalog'
-import { readWlEnquiryFieldsFromDocumentCookie } from '@/lib/catalog/read-wl-enquiry-fields'
+import {
+  parseWlWarehouseName,
+  readWlEnquiryFieldsFromDocumentCookie,
+} from '@/lib/catalog/read-wl-enquiry-fields'
 import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
 import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 
@@ -52,14 +55,27 @@ export default function CartPage() {
 
   // Read wl cookie (warehouse_name is set on the location screen — no /api/nearest-location here).
   useEffect(() => {
-    try {
-      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
-      if (!match) return
-      const data = JSON.parse(decodeURIComponent(match.slice(3)))
-      setDeliveryArea(getWlHeaderLabelFromParsed(data))
-      const wh = data as { warehouse_name?: string }
-      setWarehouseName(typeof wh.warehouse_name === 'string' ? wh.warehouse_name : null)
-    } catch { /* malformed cookie — ignore */ }
+    function syncWlCookieFromDocument() {
+      try {
+        const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
+        if (!match) {
+          setDeliveryArea(null)
+          setWarehouseName(null)
+          return
+        }
+        const data = JSON.parse(decodeURIComponent(match.slice(3))) as Record<string, unknown>
+        setDeliveryArea(getWlHeaderLabelFromParsed(data))
+        setWarehouseName(parseWlWarehouseName(data))
+      } catch {
+        /* malformed cookie — ignore */
+      }
+    }
+    syncWlCookieFromDocument()
+    function onVisible() {
+      if (document.visibilityState === 'visible') syncWlCookieFromDocument()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   const gst = Math.round(subtotal * GST_RATE)
@@ -427,7 +443,9 @@ export default function CartPage() {
             </p>
             <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
               {hasLocation
-                ? (warehouseName ? `From Wine Yard ${warehouseName}` : 'From nearest Wine Yard warehouse')
+                ? (warehouseName?.trim()
+                  ? `From ${warehouseName.trim()}`
+                  : 'From nearest Wine Yard warehouse')
                 : 'Required before getting a quote — tap to set'}
             </p>
           </div>

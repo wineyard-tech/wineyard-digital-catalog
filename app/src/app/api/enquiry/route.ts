@@ -15,6 +15,7 @@ import type { GeocodedLocation } from '@/lib/routing'
 import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
 import { getPostHogServer } from '@/lib/posthog-node'
 import { customerFacingName, sessionContactLine } from '@/lib/auth/account-display'
+import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -62,8 +63,7 @@ async function resolveWarehouseForEnquiry(
     nearestLocationPhone: null,
   }
 
-  const rawId =
-    typeof body.nearest_location_id === 'string' ? body.nearest_location_id.trim() : ''
+  const rawId = parseWlWarehouseZohoIdValue(body.nearest_location_id ?? null) ?? ''
   if (rawId) {
     const dormant = dormantZohoLocationIds()
     let q = supabase
@@ -84,12 +84,9 @@ async function resolveWarehouseForEnquiry(
     }
   }
 
-  if (
-    body.user_lat != null &&
-    body.user_lng != null &&
-    isFinite(body.user_lat) &&
-    isFinite(body.user_lng)
-  ) {
+  const userLat = parseWlFiniteCoord(body.user_lat ?? null)
+  const userLng = parseWlFiniteCoord(body.user_lng ?? null)
+  if (userLat !== null && userLng !== null) {
     const dormant = dormantZohoLocationIds()
     let locQuery = supabase
       .from('locations')
@@ -112,8 +109,8 @@ async function resolveWarehouseForEnquiry(
         latitude: l.latitude,
         longitude: l.longitude,
       }))
-      const nearestId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
-      const nearest = locs.find((l) => l.zoho_location_id === nearestId)
+      const nearestId = getNearestLocation(userLat, userLng, geocoded)
+      const nearest = locs.find((l) => String(l.zoho_location_id) === String(nearestId))
       if (nearestId && nearest) {
         return {
           nearestLocationId: nearestId,

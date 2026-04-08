@@ -32,9 +32,13 @@ export function getNearestLocation(
   userLng: number,
   locations: GeocodedLocation[]
 ): string | null {
-  const valid = locations.filter(
-    l => isFinite(l.latitude) && isFinite(l.longitude)
-  )
+  const valid = locations
+    .map((l) => ({
+      zoho_location_id: String(l.zoho_location_id),
+      latitude: Number(l.latitude),
+      longitude: Number(l.longitude),
+    }))
+    .filter((l) => isFinite(l.latitude) && isFinite(l.longitude))
   if (valid.length === 0) return null
 
   let nearest = valid[0]
@@ -48,9 +52,12 @@ export function getNearestLocation(
     }
   }
 
-  // If User Location is beyond 50km, always route requests to Himayatnagar Warehouse (zoho_location_id 2251466000000188214)
-  if (minDist > 50) {
-    return process.env.ZOHO_DEFAULT_LOCATION_ID?.trim() ?? null;
+  // Beyond this radius, fall back to ZOHO_DEFAULT_LOCATION_ID (e.g. flagship warehouse).
+  // 50km was too tight for outer Telangana towns (still served by peripheral warehouses).
+  const maxKmRaw = process.env.NEAREST_WAREHOUSE_MAX_DIRECT_KM?.trim()
+  const maxKm = maxKmRaw !== undefined && maxKmRaw !== '' ? Number(maxKmRaw) : 250
+  if (isFinite(maxKm) && maxKm > 0 && minDist > maxKm) {
+    return process.env.ZOHO_DEFAULT_LOCATION_ID?.trim() ?? null
   }
 
   return nearest.zoho_location_id

@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     name: row.location_name,
-    zoho_location_id: row.zoho_location_id,
+    zoho_location_id: String(row.zoho_location_id),
     location_name: row.location_name,
     phone: row.phone ?? null,
     latitude: typeof row.latitude === 'number' ? row.latitude : Number(row.latitude),
