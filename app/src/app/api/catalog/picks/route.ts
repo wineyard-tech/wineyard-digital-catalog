@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { resolvePricebookRates, buildCatalogItem } from '@/lib/pricing'
+import { resolvePricebookRates, buildCatalogItem, fetchCategoryIconMap } from '@/lib/pricing'
 
 export async function GET(request: NextRequest) {
   const sessionToken = request.cookies.get('session_token')?.value
@@ -14,7 +14,10 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient()
-  const pricebookRates = await resolvePricebookRates(supabase, zohoContactId)
+  const [pricebookRates, categoryIconMap] = await Promise.all([
+    resolvePricebookRates(supabase, zohoContactId),
+    fetchCategoryIconMap(supabase),
+  ])
 
   let recommendedIds: string[] = []
 
@@ -91,7 +94,7 @@ export async function GET(request: NextRequest) {
     .slice(0, 10)
     .map(id => rowMap[id])
     .filter(Boolean)
-    .map(row => buildCatalogItem(row as Record<string, unknown>, pricebookRates))
+    .map(row => buildCatalogItem(row as Record<string, unknown>, pricebookRates, categoryIconMap))
 
   return NextResponse.json({ items })
 }

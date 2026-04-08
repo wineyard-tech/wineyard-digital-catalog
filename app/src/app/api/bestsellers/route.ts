@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { buildCatalogItem, fetchCategoryIconMap } from '@/lib/pricing'
 import type { CatalogItem } from '@/types/catalog'
 
 // ── GET /api/bestsellers ───────────────────────────────────────────────────────
@@ -37,6 +38,8 @@ export async function GET() {
     return NextResponse.json({ items: [] })
   }
 
+  const categoryIconMap = await fetchCategoryIconMap(supabase)
+
   // ── 3. Shape CatalogItem[] (base pricing, no pricebook) ───────────────────
   // Preserve the popularity order from step 1.
   const rowMap = new Map(
@@ -47,29 +50,7 @@ export async function GET() {
     .map((id) => {
       const row = rowMap.get(id)
       if (!row) return null
-
-      const baseRate = Number(row.base_rate ?? 0)
-      const stock = Number(row.available_stock ?? 0)
-
-      let imageUrl: string | null = null
-      if (Array.isArray(row.image_urls) && (row.image_urls as unknown[]).length > 0) {
-        imageUrl = (row.image_urls as string[])[0]
-      }
-
-      return {
-        zoho_item_id: row.zoho_item_id as string,
-        item_name: row.item_name as string,
-        sku: row.sku as string,
-        brand: (row.brand as string | null) ?? null,
-        category_name: (row.category_name as string | null) ?? null,
-        base_rate: baseRate,
-        final_price: baseRate,
-        available_stock: stock,
-        stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-        image_url: imageUrl,
-        tax_percentage: 18,
-        price_type: 'base',
-      } satisfies CatalogItem
+      return buildCatalogItem(row, {}, categoryIconMap)
     })
     .filter((item) => item !== null) as CatalogItem[]
 

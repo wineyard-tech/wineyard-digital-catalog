@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth'
-import { resolvePricebookRatesForItemIds } from '@/lib/pricing'
+import { resolvePricebookRatesForItemIds, fetchCategoryIconMap, buildCatalogItem } from '@/lib/pricing'
 import type { CatalogItem } from '@/types/catalog'
 
 /**
@@ -162,11 +162,10 @@ export async function GET(request: NextRequest) {
 
   if (!itemRows || itemRows.length === 0) return NextResponse.json({ items: [] })
 
-  const pricebookRates = await resolvePricebookRatesForItemIds(
-    supabase,
-    zohoContactId,
-    suggestionIds
-  )
+  const [pricebookRates, categoryIconMap] = await Promise.all([
+    resolvePricebookRatesForItemIds(supabase, zohoContactId, suggestionIds),
+    fetchCategoryIconMap(supabase),
+  ])
 
   // ── Shape CatalogItem[] preserving suggestion order ────────────────────────
   const itemMap = Object.fromEntries(
@@ -176,31 +175,7 @@ export async function GET(request: NextRequest) {
   const items: CatalogItem[] = suggestionIds
     .filter((id) => itemMap[id])
     .slice(0, 4)
-    .map((id) => {
-      const row = itemMap[id]
-      const baseRate = Number(row.base_rate ?? 0)
-      const customRate = pricebookRates[id]
-      const finalPrice = customRate ?? baseRate
-      const stock = Number(row.available_stock ?? 0)
-      let imageUrl: string | null = null
-      if (Array.isArray(row.image_urls) && (row.image_urls as unknown[]).length > 0) {
-        imageUrl = (row.image_urls as string[])[0]
-      }
-      return {
-        zoho_item_id: id,
-        item_name: row.item_name as string,
-        sku: row.sku as string,
-        brand: (row.brand as string | null) ?? null,
-        category_name: (row.category_name as string | null) ?? null,
-        base_rate: baseRate,
-        final_price: finalPrice,
-        available_stock: stock,
-        stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-        image_url: imageUrl,
-        tax_percentage: 18,
-        price_type: customRate != null ? 'custom' : 'base',
-      }
-    })
+    .map((id) => buildCatalogItem(itemMap[id] as Record<string, unknown>, pricebookRates, categoryIconMap))
 
   return NextResponse.json({ items })
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { resolvePricebookRatesForItemIds } from '@/lib/pricing'
+import { resolvePricebookRatesForItemIds, fetchCategoryIconMap, buildCatalogItem } from '@/lib/pricing'
 import type { CatalogItem, CartItem } from '@/types/catalog'
 
 export interface PurchasedProduct extends CatalogItem {
@@ -117,38 +117,17 @@ export async function GET(request: NextRequest) {
     .in('zoho_item_id', itemIds)
     .eq('status', 'active')
 
-  const pricebookRates = await resolvePricebookRatesForItemIds(
-    supabase,
-    session.zoho_contact_id,
-    itemIds
-  )
+  const [pricebookRates, categoryIconMap] = await Promise.all([
+    resolvePricebookRatesForItemIds(supabase, session.zoho_contact_id, itemIds),
+    fetchCategoryIconMap(supabase),
+  ])
 
   // ── 6. Shape PurchasedProduct[] ───────────────────────────────────────────
   const products: PurchasedProduct[] = (rows ?? []).map((row) => {
-    const baseRate = Number(row.base_rate ?? 0)
-    const customRate = pricebookRates[row.zoho_item_id as string]
-    const finalPrice = customRate ?? baseRate
-    const stock = Number(row.available_stock ?? 0)
     const stats = productMap.get(row.zoho_item_id as string)!
-
-    let imageUrl: string | null = null
-    if (Array.isArray(row.image_urls) && (row.image_urls as unknown[]).length > 0) {
-      imageUrl = (row.image_urls as string[])[0]
-    }
-
+    const base = buildCatalogItem(row as Record<string, unknown>, pricebookRates, categoryIconMap)
     return {
-      zoho_item_id: row.zoho_item_id as string,
-      item_name: row.item_name as string,
-      sku: row.sku as string,
-      brand: (row.brand as string | null) ?? null,
-      category_name: (row.category_name as string | null) ?? null,
-      base_rate: baseRate,
-      final_price: finalPrice,
-      available_stock: stock,
-      stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-      image_url: imageUrl,
-      tax_percentage: 18,
-      price_type: customRate != null ? 'custom' : 'base',
+      ...base,
       last_purchased_at: stats.last_purchased_at,
       total_qty: stats.total_qty,
       order_count: stats.order_count,
@@ -177,7 +156,10 @@ async function getBestsellers(
 
   const popularIds = (popularRows as { zoho_item_id: string }[]).map((r) => r.zoho_item_id)
 
-  const pricebookRates = await resolvePricebookRatesForItemIds(supabase, zohoContactId, popularIds)
+  const [pricebookRates, categoryIconMap] = await Promise.all([
+    resolvePricebookRatesForItemIds(supabase, zohoContactId, popularIds),
+    fetchCategoryIconMap(supabase),
+  ])
 
   const { data: rows } = await supabase
     .from('items')
@@ -188,30 +170,7 @@ async function getBestsellers(
 
   if (!rows) return []
 
-  return (rows as Record<string, unknown>[]).map((row) => {
-    const baseRate = Number(row.base_rate ?? 0)
-    const customRate = pricebookRates[row.zoho_item_id as string]
-    const finalPrice = customRate ?? baseRate
-    const stock = Number(row.available_stock ?? 0)
-
-    let imageUrl: string | null = null
-    if (Array.isArray(row.image_urls) && (row.image_urls as unknown[]).length > 0) {
-      imageUrl = (row.image_urls as string[])[0]
-    }
-
-    return {
-      zoho_item_id: row.zoho_item_id as string,
-      item_name: row.item_name as string,
-      sku: row.sku as string,
-      brand: (row.brand as string | null) ?? null,
-      category_name: (row.category_name as string | null) ?? null,
-      base_rate: baseRate,
-      final_price: finalPrice,
-      available_stock: stock,
-      stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-      image_url: imageUrl,
-      tax_percentage: 18,
-      price_type: customRate != null ? 'custom' : 'base',
-    }
-  })
+  return (rows as Record<string, unknown>[]).map((row) =>
+    buildCatalogItem(row, pricebookRates, categoryIconMap)
+  )
 }

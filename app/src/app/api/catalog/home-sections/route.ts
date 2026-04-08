@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
-import { resolvePricebookRates, buildCatalogItem } from '@/lib/pricing'
+import { resolvePricebookRates, buildCatalogItem, fetchCategoryIconMap } from '@/lib/pricing'
 import type { CatalogItem } from '@/types/catalog'
 
 export interface HomeSection {
@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient()
-  const pricebookRates = await resolvePricebookRates(supabase, zohoContactId)
+  const [pricebookRates, categoryIconMap] = await Promise.all([
+    resolvePricebookRates(supabase, zohoContactId),
+    fetchCategoryIconMap(supabase),
+  ])
 
   // Fetch popularity data for all items (enough to cover all categories)
   const { data: popularRows } = await (supabase as any)
@@ -68,7 +71,7 @@ export async function GET(request: NextRequest) {
       items: items
         .sort((a, b) => b._pop - a._pop)
         .slice(0, 5)
-        .map(row => buildCatalogItem(row, pricebookRates)),
+        .map(row => buildCatalogItem(row, pricebookRates, categoryIconMap)),
     }))
     .sort((a, b) => b.totalOrders - a.totalOrders)
     .map(({ category, items }) => ({ category, items }))

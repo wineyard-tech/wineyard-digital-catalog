@@ -25,6 +25,8 @@ export interface CartItem {
   tax_percentage: 18;
   line_total: number;
   image_url?: string | null;
+  /** categories.icon_url — used when product has no image_urls */
+  category_icon_url?: string | null;
 }
 
 export interface SessionPayload {
@@ -120,6 +122,8 @@ export interface LineItemDetail {
   tax_percentage: number;
   line_total: number;
   image_url: string | null;
+  /** categories.icon_url when product image is missing */
+  category_icon_url?: string | null;
 }
 
 export interface TransactionDetail {

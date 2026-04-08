@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
+import { fetchCategoryIconMap } from '@/lib/pricing'
 import { getZohoInvoiceLineItems } from '@/lib/zoho'
 import type { TransactionDetail, LineItemDetail } from '@/types/catalog'
 
@@ -75,17 +76,22 @@ export async function GET(
       .map((li) => li.zoho_item_id || li.item_id)
       .filter(Boolean) as string[]
 
-    let imageMap = new Map<string, string | null>()
+    type ItemThumb = { image_url: string | null; category_icon_url: string | null }
+    let imageMap = new Map<string, ItemThumb>()
     if (zohoItemIds.length > 0) {
+      const categoryIconMap = await fetchCategoryIconMap(supabase)
       const { data: itemRows } = await supabase
         .from('items')
-        .select('zoho_item_id, image_urls')
+        .select('zoho_item_id, image_urls, category_name')
         .in('zoho_item_id', zohoItemIds)
       for (const row of itemRows ?? []) {
         const url = Array.isArray(row.image_urls) && row.image_urls.length > 0
           ? (row.image_urls[0] as string)
           : null
-        imageMap.set(row.zoho_item_id, url)
+        const cn = (row.category_name as string | null) ?? null
+        const category_icon_url =
+          cn && categoryIconMap[cn] ? categoryIconMap[cn] : null
+        imageMap.set(row.zoho_item_id, { image_url: url, category_icon_url })
       }
     }
 
@@ -96,6 +102,7 @@ export async function GET(
       const lineTotal = Number(li.line_total ?? li.item_total) || 0
       // Derive rate from line_total when Zoho stores rate as '' (empty string)
       const rate = rawRate || (qty > 0 ? lineTotal / qty : 0)
+      const thumb = imageMap.get(resolvedId)
       return {
         zoho_item_id: resolvedId,
         item_name: li.item_name || li.name || '',
@@ -104,7 +111,8 @@ export async function GET(
         rate,
         tax_percentage: Number(li.tax_percentage) || 0,
         line_total: lineTotal || (qty * rate),
-        image_url: imageMap.get(resolvedId) ?? null,
+        image_url: thumb?.image_url ?? null,
+        category_icon_url: thumb?.category_icon_url ?? null,
       }
     })
 

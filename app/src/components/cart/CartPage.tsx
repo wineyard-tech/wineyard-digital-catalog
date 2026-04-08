@@ -11,6 +11,7 @@ import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, CartItem } from '@/types/catalog'
 import { readWlEnquiryFieldsFromDocumentCookie } from '@/lib/catalog/read-wl-enquiry-fields'
 import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -354,7 +355,14 @@ export default function CartPage() {
               style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: idx < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}
             >
               <div style={{ width: 56, height: 56, borderRadius: 6, overflow: 'hidden', background: '#F9FAFB', flexShrink: 0, position: 'relative' }}>
-                <Image src={item.image_url || PLACEHOLDER} alt={item.item_name} fill style={{ objectFit: 'cover' }} unoptimized sizes="56px" />
+                <Image
+                  src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER}
+                  alt={item.item_name}
+                  fill
+                  style={{ objectFit: 'cover' }}
+                  unoptimized
+                  sizes="56px"
+                />
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth'
+import { fetchCategoryIconMap, buildCatalogItem } from '@/lib/pricing'
 import type { CatalogItem } from '@/types/catalog'
 
 interface RouteParams { params: Promise<{ id: string }> }
@@ -124,6 +125,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
   }
 
+  const categoryIconMap = await fetchCategoryIconMap(supabase)
+
   // ── Group by associated category, sort by popularity, pick top 2 each ─────
   const byCategory = new Map<string, Record<string, unknown>[]>()
   for (const row of allRows as Record<string, unknown>[]) {
@@ -148,28 +151,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const catRows = byCategory.get(catName) ?? []
     for (const row of catRows) {
       if (products.length >= 6) break
-      const baseRate = Number(row.base_rate ?? 0)
-      const customRate = pricebookRates[row.zoho_item_id as string]
-      const finalPrice = customRate ?? baseRate
-      const stock = Number(row.available_stock ?? 0)
-      let imageUrl: string | null = null
-      if (Array.isArray(row.image_urls) && row.image_urls.length > 0) {
-        imageUrl = row.image_urls[0] as string
-      }
-      products.push({
-        zoho_item_id: row.zoho_item_id as string,
-        item_name: row.item_name as string,
-        sku: row.sku as string,
-        brand: (row.brand as string | null) ?? null,
-        category_name: (row.category_name as string | null) ?? null,
-        base_rate: baseRate,
-        final_price: finalPrice,
-        available_stock: stock,
-        stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-        image_url: imageUrl,
-        tax_percentage: 18,
-        price_type: customRate != null ? 'custom' : 'base',
-      })
+      products.push(buildCatalogItem(row, pricebookRates, categoryIconMap))
     }
     if (products.length >= 6) break
   }
