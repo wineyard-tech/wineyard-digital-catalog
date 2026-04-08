@@ -29,5 +29,6 @@ node_modules/
 .worktrees/**/.env.local
 .claude/worktrees/**/.env.local
 .claude/worktrees/**/.claude/
+.claire/worktrees/**/
 .vercel
 .env*.local
