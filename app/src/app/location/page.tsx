@@ -16,8 +16,21 @@ interface LocationData {
   city: string
   lat?: number
   lng?: number
-  /** Nearest Wine Yard warehouse name — set once here via /api/nearest-location (not on cart). */
+  /** Nearest Wine Yard warehouse — set on confirm via /api/nearest-location (not on cart). */
   warehouse_name?: string
+  warehouse_zoho_location_id?: string
+  warehouse_phone?: string
+  warehouse_lat?: number
+  warehouse_lng?: number
+}
+
+interface NearestLocationApiResponse {
+  name?: string | null
+  zoho_location_id?: string | null
+  location_name?: string | null
+  phone?: string | null
+  latitude?: number | null
+  longitude?: number | null
 }
 
 type DetectState = 'idle' | 'detecting' | 'denied'
@@ -115,11 +128,35 @@ export default function LocationPage() {
       try {
         const r = await fetch(`/api/nearest-location?lat=${lat}&lng=${lng}`)
         if (r.ok) {
-          const d: { name?: string | null } = await r.json()
-          if (d?.name) next = { ...next, warehouse_name: d.name }
+          const d = (await r.json()) as NearestLocationApiResponse
+          const whName = d.location_name ?? d.name ?? undefined
+          const whId = typeof d.zoho_location_id === 'string' && d.zoho_location_id ? d.zoho_location_id : undefined
+          if (whName || whId) {
+            next = {
+              ...next,
+              ...(whName ? { warehouse_name: whName } : {}),
+              ...(whId ? { warehouse_zoho_location_id: whId } : {}),
+              ...(typeof d.phone === 'string' && d.phone ? { warehouse_phone: d.phone } : {}),
+              ...(typeof d.latitude === 'number' && isFinite(d.latitude)
+                ? { warehouse_lat: d.latitude }
+                : {}),
+              ...(typeof d.longitude === 'number' && isFinite(d.longitude)
+                ? { warehouse_lng: d.longitude }
+                : {}),
+            }
+          }
         }
       } catch {
         /* keep location without warehouse label */
+      }
+    } else {
+      next = {
+        ...next,
+        warehouse_name: undefined,
+        warehouse_zoho_location_id: undefined,
+        warehouse_phone: undefined,
+        warehouse_lat: undefined,
+        warehouse_lng: undefined,
       }
     }
     writeLocationCookie(next)

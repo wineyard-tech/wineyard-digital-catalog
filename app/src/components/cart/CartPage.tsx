@@ -9,6 +9,8 @@ import { useCart } from './CartContext'
 import { useAuthContext } from '@/contexts/AuthContext'
 import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, CartItem } from '@/types/catalog'
+import { readWlEnquiryFieldsFromDocumentCookie } from '@/lib/catalog/read-wl-enquiry-fields'
+import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -52,29 +54,12 @@ export default function CartPage() {
     try {
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
       if (!match) return
-      const data = JSON.parse(decodeURIComponent(match.slice(3))) as {
-        name?: string
-        area?: string
-        city?: string
-        warehouse_name?: string
-      }
-      setDeliveryArea(data.name || data.area || data.city || null)
-      setWarehouseName(typeof data.warehouse_name === 'string' ? data.warehouse_name : null)
+      const data = JSON.parse(decodeURIComponent(match.slice(3)))
+      setDeliveryArea(getWlHeaderLabelFromParsed(data))
+      const wh = data as { warehouse_name?: string }
+      setWarehouseName(typeof wh.warehouse_name === 'string' ? wh.warehouse_name : null)
     } catch { /* malformed cookie — ignore */ }
   }, [])
-
-  function readUserCoords(): { user_lat: number | null; user_lng: number | null } {
-    try {
-      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
-      if (!match) return { user_lat: null, user_lng: null }
-      const data = JSON.parse(decodeURIComponent(match.slice(3)))
-      const lat = typeof data.lat === 'number' && isFinite(data.lat) ? data.lat : null
-      const lng = typeof data.lng === 'number' && isFinite(data.lng) ? data.lng : null
-      return { user_lat: lat, user_lng: lng }
-    } catch {
-      return { user_lat: null, user_lng: null }
-    }
-  }
 
   const gst = Math.round(subtotal * GST_RATE)
   const total = subtotal  // tax shown as a line item; "To Pay" = subtotal (pre-tax)
@@ -174,14 +159,18 @@ export default function CartPage() {
       setLoading(true)
       setError(null)
       try {
-        const coords = readUserCoords()
+        const wlFields = readWlEnquiryFieldsFromDocumentCookie()
         const res = await fetch('/api/enquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items,
             estimate_id: estimateBanner?.public_id ?? undefined,
-            ...coords,
+            user_lat: wlFields.user_lat,
+            user_lng: wlFields.user_lng,
+            ...(wlFields.nearest_location_id
+              ? { nearest_location_id: wlFields.nearest_location_id }
+              : {}),
           }),
         })
         const data: EnquiryResponse = await res.json()
