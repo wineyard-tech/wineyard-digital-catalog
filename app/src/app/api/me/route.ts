@@ -16,5 +16,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({
     authenticated: true,
     contact_name: session.contact_name,
+    company_name: session.company_name,
+    contact_person_name: session.contact_person_name,
   })
 }

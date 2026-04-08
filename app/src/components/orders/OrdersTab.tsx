@@ -56,7 +56,7 @@ export function OrdersTab() {
       if (data.error) throw new Error(data.error)
       setItems((prev) => {
         const incoming: TransactionListItem[] = pageOffset === 0 ? data.items : [...prev, ...data.items]
-        return incoming.filter((i) => i.kind === 'invoice')
+        return incoming
       })
       hasMoreRef.current = data.has_more
       setHasMore(data.has_more)

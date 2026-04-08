@@ -97,16 +97,18 @@ export async function getAccessToken(): Promise<string> {
   return tokenData.access_token
 }
 
+export interface ZohoContactPhoneMatch {
+  contact: ZohoContact
+  /** Zoho `contact_person_id` when the inbound number matched a sub-record; otherwise null. */
+  matchedContactPersonId: string | null
+}
+
 /**
  * Looks up a single contact in Zoho Books by phone number.
- * Checks both the top-level contact fields (phone, mobile) AND all
- * contact_persons sub-records — because integrators are typically stored
- * as Contact Persons under a parent Contact, not as top-level contacts.
- *
- * Paginates through all active customers (200 per page) until found.
- * Returns the parent Contact when any match is found, or null.
+ * Checks top-level phone/mobile first, then contact_persons.
+ * Returns parent contact + which person matched (if any).
  */
-export async function getContactByPhone(phone: string): Promise<ZohoContact | null> {
+export async function getContactByPhoneWithMatch(phone: string): Promise<ZohoContactPhoneMatch | null> {
   const token = await getAccessToken()
   const orgId = process.env.ZOHO_ORG_ID!
   const normalised = phone.replace(/\D/g, '')
@@ -131,33 +133,43 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
     if (contacts.length === 0) break
 
     for (const contact of contacts) {
-      // Check top-level phone / mobile
       if (
         (contact.phone ?? '').replace(/\D/g, '') === normalised ||
         (contact.mobile ?? '').replace(/\D/g, '') === normalised
       ) {
-        return contact
+        return { contact, matchedContactPersonId: null }
       }
 
-      // Check contact_persons sub-records (integrators registered under a company)
       const persons = contact.contact_persons ?? []
-      if (
-        persons.some(
-          (p) =>
-            (p.phone ?? '').replace(/\D/g, '') === normalised ||
-            (p.mobile ?? '').replace(/\D/g, '') === normalised
-        )
-      ) {
-        return contact
+      for (const p of persons) {
+        if (
+          (p.phone ?? '').replace(/\D/g, '') === normalised ||
+          (p.mobile ?? '').replace(/\D/g, '') === normalised
+        ) {
+          return { contact, matchedContactPersonId: p.contact_person_id }
+        }
       }
     }
 
-    // Fewer than 200 returned — no more pages
     if (contacts.length < 200) break
     page++
   }
 
   return null
+}
+
+/**
+ * Looks up a single contact in Zoho Books by phone number.
+ * Checks both the top-level contact fields (phone, mobile) AND all
+ * contact_persons sub-records — because integrators are typically stored
+ * as Contact Persons under a parent Contact, not as top-level contacts.
+ *
+ * Paginates through all active customers (200 per page) until found.
+ * Returns the parent Contact when any match is found, or null.
+ */
+export async function getContactByPhone(phone: string): Promise<ZohoContact | null> {
+  const row = await getContactByPhoneWithMatch(phone)
+  return row?.contact ?? null
 }
 
 /**
@@ -177,12 +189,16 @@ export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<un
       console.warn(`[zoho] getZohoInvoiceLineItems: HTTP ${res.status} for invoice ${zohoInvoiceId}`)
       return null
     }
-    const data = await res.json()
-    if (!Array.isArray(data.invoice?.line_items)) {
-      console.warn(`[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${data.code}, message=${data.message}`)
+    const data = (await res.json()) as Record<string, unknown>
+    const invoice = (data.invoice ?? data) as Record<string, unknown> | undefined
+    const lineItems = invoice?.line_items
+    if (!Array.isArray(lineItems)) {
+      console.warn(
+        `[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${String(data.code)}, message=${String(data.message)}`
+      )
       return null
     }
-    return data.invoice.line_items
+    return lineItems
   } catch (err) {
     console.warn(`[zoho] getZohoInvoiceLineItems: exception for ${zohoInvoiceId}:`, err)
     return null

@@ -13,6 +13,7 @@ import type { CatalogItem } from '@/types/catalog'
 import ProductCard from '@/components/catalog/ProductCard'
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
 import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
+import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { useSwipe } from '@/hooks/useSwipe'
 
@@ -65,13 +66,16 @@ interface TabData {
 }
 
 interface HomeClientProps {
-  contactName: string | null
+  /** Primary line: contact person name, or integrator contact name. */
+  accountPrimary: string | null
+  /** Secondary line: integrator name when logged in as person; else company or empty. */
+  accountSubtitle: string | null
   categories: Category[]
   initialQuery?: string
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
-export default function HomeClient({ contactName, categories, initialQuery = '' }: HomeClientProps) {
+export default function HomeClient({ accountPrimary, accountSubtitle, categories, initialQuery = '' }: HomeClientProps) {
   const router = useRouter()
   const hidden = useScrollDirection()
 
@@ -101,7 +105,7 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
       if (match) {
         const data = JSON.parse(decodeURIComponent(match.slice(3)))
-        setLocationArea(data.area || data.city || null)
+        setLocationArea(getWlHeaderLabelFromParsed(data))
       }
     } catch { /* ignore malformed cookie */ }
   }, [])
@@ -240,8 +244,8 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
         <CatalogPageHeader
           hidden={hidden}
           locationArea={locationArea}
-          contactName={contactName}
-          onAvatarClick={() => contactName ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
+          contactName={accountPrimary}
+          onAvatarClick={() => accountPrimary ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
           onSearch={(q) => setSearchQuery(q)}
           searchDefaultValue={initialQuery}
         />
@@ -495,8 +499,10 @@ export default function HomeClient({ contactName, categories, initialQuery = '' 
               <User size={26} color="#0066CC" aria-hidden="true" />
             </div>
             <div>
-              <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>{contactName}</p>
-              <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>Registered customer</p>
+              <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>{accountPrimary}</p>
+              {accountSubtitle ? (
+                <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>{accountSubtitle}</p>
+              ) : null}
             </div>
           </div>
           <div style={{ margin: '16px 16px 0', background: '#fff', borderRadius: 16, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>

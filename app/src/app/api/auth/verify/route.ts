@@ -43,7 +43,9 @@ export async function POST(request: NextRequest) {
 
   const { data: authReq, error } = await supabase
     .from('auth_requests')
-    .select('id, phone, zoho_contact_id, otp_code, otp_expires_at, ref_expires_at, attempts, used')
+    .select(
+      'id, phone, zoho_contact_id, zoho_contact_person_id, otp_code, otp_expires_at, ref_expires_at, attempts, used',
+    )
     .eq('ref_id', ref_id)
     .eq('used', false)
     .maybeSingle()
@@ -115,6 +117,7 @@ export async function POST(request: NextRequest) {
     .from('sessions')
     .insert({
       zoho_contact_id: authReq.zoho_contact_id,
+      zoho_contact_person_id: authReq.zoho_contact_person_id ?? null,
       phone: authReq.phone,
       expires_at: expiresAt,
     })

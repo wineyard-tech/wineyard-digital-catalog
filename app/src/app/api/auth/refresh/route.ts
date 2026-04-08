@@ -37,12 +37,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Could not refresh session.' }, { status: 500 })
   }
 
-  // Re-fetch latest contact details (name/company may have changed via Zoho sync)
   const { data: contact } = await supabase
     .from('contacts')
     .select('contact_name, company_name, pricebook_id')
-    .eq('phone', session.phone)
+    .eq('zoho_contact_id', session.zoho_contact_id)
     .maybeSingle()
+
+  let contact_person_name: string | null = session.contact_person_name
+  if (session.zoho_contact_person_id) {
+    const { data: person } = await supabase
+      .from('contact_persons')
+      .select('first_name, last_name')
+      .eq('zoho_contact_person_id', session.zoho_contact_person_id)
+      .maybeSingle()
+    if (person) {
+      const parts = [person.first_name, person.last_name].filter(Boolean).join(' ').trim()
+      contact_person_name = parts.length > 0 ? parts : 'Team member'
+    }
+  }
 
   const response = NextResponse.json(
     {
@@ -50,6 +62,7 @@ export async function POST(request: NextRequest) {
       user: {
         zoho_contact_id: session.zoho_contact_id,
         contact_name: contact?.contact_name ?? session.contact_name,
+        contact_person_name,
         company_name: contact?.company_name ?? null,
         phone: session.phone,
         pricebook_id: contact?.pricebook_id ?? session.pricebook_id,

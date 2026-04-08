@@ -7,6 +7,7 @@ import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isValidIndianPhone, normalisePhone, verifyOTP } from '@/lib/auth/otp'
 import { setSessionCookie } from '@/lib/auth'
+import { resolveCatalogLoginByPhone } from '@/lib/auth/resolve-catalog-login'
 
 const MAX_ATTEMPTS = Number(process.env.MAX_OTP_ATTEMPTS ?? 3)
 const SESSION_DAYS = 15
@@ -67,22 +68,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const { data: contact } = await supabase
-      .from('contacts')
-      .select('zoho_contact_id, contact_name, company_name, pricebook_id')
-      .eq('phone', phone)
-      .maybeSingle()
+    const login = await resolveCatalogLoginByPhone(supabase, phone)
 
-    if (!contact) {
-      console.error('[verify-otp] contact not found after OTP success for phone:', phone)
-      return NextResponse.json({ error: 'Contact not found.' }, { status: 500 })
+    if (login.kind !== 'ok') {
+      console.error('[verify-otp] login no longer valid after OTP success:', login.kind, phone)
+      return NextResponse.json(
+        { error: 'Account is no longer eligible for catalog access. Please contact Wine Yard.' },
+        { status: 403 },
+      )
     }
 
     const sessionExpiry = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000).toISOString()
     const { data: session, error: sessionError } = await supabase
       .from('sessions')
       .insert({
-        zoho_contact_id: contact.zoho_contact_id,
+        zoho_contact_id: login.parent.zoho_contact_id,
+        zoho_contact_person_id: login.person?.zoho_contact_person_id ?? null,
         phone,
         ip_address: ip,
         user_agent: userAgent,
@@ -101,18 +102,22 @@ export async function POST(request: NextRequest) {
       attempt_type: 'registered_success',
       ip_address: ip,
       user_agent: userAgent,
-      metadata: { zoho_contact_id: contact.zoho_contact_id },
+      metadata: {
+        zoho_contact_id: login.parent.zoho_contact_id,
+        ...(login.person ? { zoho_contact_person_id: login.person.zoho_contact_person_id } : {}),
+      },
     })
 
     const response = NextResponse.json(
       {
         success: true,
         user: {
-          zoho_contact_id: contact.zoho_contact_id,
-          contact_name: contact.contact_name,
-          company_name: contact.company_name ?? null,
+          zoho_contact_id: login.parent.zoho_contact_id,
+          contact_name: login.parent.contact_name,
+          contact_person_name: login.person?.display_name ?? null,
+          company_name: login.parent.company_name ?? null,
           phone,
-          pricebook_id: contact.pricebook_id ?? null,
+          pricebook_id: login.parent.pricebook_id ?? null,
         },
       },
       { status: 200 },

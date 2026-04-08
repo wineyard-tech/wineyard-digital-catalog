@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Plus, Minus } from 'lucide-react'
 import posthog from 'posthog-js'
 import type { CatalogItem } from '@/types/catalog'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from '../cart/CartContext'
 
 interface ProductCardProps {
@@ -29,9 +30,9 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
 
   const cartEntry = items.find((i) => i.zoho_item_id === item.zoho_item_id)
   const qty = cartEntry?.quantity ?? 0
-  const imgSrc = !imgError && item.image_url
-    ? item.image_url
-    : item.category_icon_url ?? PLACEHOLDER
+  const imgSrc =
+    resolveProductThumbnailUrl(!imgError ? item.image_url : null, item.category_icon_url) ??
+    PLACEHOLDER
   const hasDiscount = item.price_type === 'custom' && item.base_rate > item.final_price
 
   function handleAdd(e: React.MouseEvent) {
@@ -45,7 +46,8 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
-      image_url: item.image_url ?? item.category_icon_url,
+      image_url: item.image_url ?? null,
+      category_icon_url: item.category_icon_url ?? null,
     })
     posthog.capture('product_added_to_cart', {
       zoho_item_id: item.zoho_item_id,

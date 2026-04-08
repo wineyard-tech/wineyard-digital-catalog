@@ -9,6 +9,12 @@ import { useCart } from './CartContext'
 import { useAuthContext } from '@/contexts/AuthContext'
 import CompleteYourOrder from './CompleteYourOrder'
 import type { EnquiryResponse, CartItem } from '@/types/catalog'
+import {
+  parseWlWarehouseName,
+  readWlEnquiryFieldsFromDocumentCookie,
+} from '@/lib/catalog/read-wl-enquiry-fields'
+import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -49,32 +55,28 @@ export default function CartPage() {
 
   // Read wl cookie (warehouse_name is set on the location screen — no /api/nearest-location here).
   useEffect(() => {
-    try {
-      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
-      if (!match) return
-      const data = JSON.parse(decodeURIComponent(match.slice(3))) as {
-        name?: string
-        area?: string
-        city?: string
-        warehouse_name?: string
+    function syncWlCookieFromDocument() {
+      try {
+        const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
+        if (!match) {
+          setDeliveryArea(null)
+          setWarehouseName(null)
+          return
+        }
+        const data = JSON.parse(decodeURIComponent(match.slice(3))) as Record<string, unknown>
+        setDeliveryArea(getWlHeaderLabelFromParsed(data))
+        setWarehouseName(parseWlWarehouseName(data))
+      } catch {
+        /* malformed cookie — ignore */
       }
-      setDeliveryArea(data.name || data.area || data.city || null)
-      setWarehouseName(typeof data.warehouse_name === 'string' ? data.warehouse_name : null)
-    } catch { /* malformed cookie — ignore */ }
-  }, [])
-
-  function readUserCoords(): { user_lat: number | null; user_lng: number | null } {
-    try {
-      const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
-      if (!match) return { user_lat: null, user_lng: null }
-      const data = JSON.parse(decodeURIComponent(match.slice(3)))
-      const lat = typeof data.lat === 'number' && isFinite(data.lat) ? data.lat : null
-      const lng = typeof data.lng === 'number' && isFinite(data.lng) ? data.lng : null
-      return { user_lat: lat, user_lng: lng }
-    } catch {
-      return { user_lat: null, user_lng: null }
     }
-  }
+    syncWlCookieFromDocument()
+    function onVisible() {
+      if (document.visibilityState === 'visible') syncWlCookieFromDocument()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   const gst = Math.round(subtotal * GST_RATE)
   const total = subtotal  // tax shown as a line item; "To Pay" = subtotal (pre-tax)
@@ -174,14 +176,18 @@ export default function CartPage() {
       setLoading(true)
       setError(null)
       try {
-        const coords = readUserCoords()
+        const wlFields = readWlEnquiryFieldsFromDocumentCookie()
         const res = await fetch('/api/enquiry', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             items,
             estimate_id: estimateBanner?.public_id ?? undefined,
-            ...coords,
+            user_lat: wlFields.user_lat,
+            user_lng: wlFields.user_lng,
+            ...(wlFields.nearest_location_id
+              ? { nearest_location_id: wlFields.nearest_location_id }
+              : {}),
           }),
         })
         const data: EnquiryResponse = await res.json()
@@ -365,7 +371,14 @@ export default function CartPage() {
               style={{ display: 'flex', gap: 12, padding: '14px 16px', borderBottom: idx < items.length - 1 ? '1px solid #F3F4F6' : 'none' }}
             >
               <div style={{ width: 56, height: 56, borderRadius: 6, overflow: 'hidden', background: '#F9FAFB', flexShrink: 0, position: 'relative' }}>
-                <Image src={item.image_url || PLACEHOLDER} alt={item.item_name} fill style={{ objectFit: 'cover' }} unoptimized sizes="56px" />
+                <Image
+                  src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER}
+                  alt={item.item_name}
+                  fill
+                  style={{ objectFit: 'cover' }}
+                  unoptimized
+                  sizes="56px"
+                />
               </div>
 
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -430,7 +443,9 @@ export default function CartPage() {
             </p>
             <p style={{ margin: 0, fontSize: 12, color: '#6B7280' }}>
               {hasLocation
-                ? (warehouseName ? `From Wine Yard ${warehouseName}` : 'From nearest Wine Yard warehouse')
+                ? (warehouseName?.trim()
+                  ? `From ${warehouseName.trim()}`
+                  : 'From nearest Wine Yard warehouse')
                 : 'Required before getting a quote — tap to set'}
             </p>
           </div>

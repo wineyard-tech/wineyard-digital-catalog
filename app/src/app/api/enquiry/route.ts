@@ -14,6 +14,12 @@ import type { EnquiryRequest, CartItem } from '@/types/catalog'
 import type { GeocodedLocation } from '@/lib/routing'
 import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
 import { getPostHogServer } from '@/lib/posthog-node'
+import { customerFacingName, sessionContactLine } from '@/lib/auth/account-display'
+import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
+import {
+  filterLocationsExcludingDormant,
+  getDormantZohoLocationIdSet,
+} from '@/lib/catalog/dormant-locations'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -29,6 +35,109 @@ async function withOneRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T>
     await new Promise((r) => setTimeout(r, delayMs))
     return fn()
   }
+}
+
+type ServiceSupabase = ReturnType<typeof createServiceClient>
+
+interface WarehouseResolution {
+  nearestLocationId: string | null
+  nearestLocationName: string | null
+  nearestLocationPhone: string | null
+}
+
+/**
+ * Resolves warehouse for Zoho + notifications. Prefers validated `nearest_location_id` from
+ * the location selector; falls back to Haversine; optionally default location when org has many warehouses.
+ */
+async function resolveWarehouseForEnquiry(
+  supabase: ServiceSupabase,
+  body: Pick<EnquiryRequest, 'nearest_location_id' | 'user_lat' | 'user_lng'>,
+  options: { applyDefaultWhenStillNull: boolean }
+): Promise<WarehouseResolution> {
+  const empty: WarehouseResolution = {
+    nearestLocationId: null,
+    nearestLocationName: null,
+    nearestLocationPhone: null,
+  }
+
+  const rawId = parseWlWarehouseZohoIdValue(body.nearest_location_id ?? null) ?? ''
+  if (rawId) {
+    const dormant = getDormantZohoLocationIdSet()
+    const { data: row } = await supabase
+      .from('locations')
+      .select('zoho_location_id, location_name, phone')
+      .eq('zoho_location_id', rawId)
+      .eq('status', 'active')
+      .maybeSingle()
+    if (row && !dormant.has(String(row.zoho_location_id))) {
+      return {
+        nearestLocationId: row.zoho_location_id,
+        nearestLocationName: row.location_name ?? null,
+        nearestLocationPhone: row.phone ?? null,
+      }
+    }
+  }
+
+  const userLat = parseWlFiniteCoord(body.user_lat ?? null)
+  const userLng = parseWlFiniteCoord(body.user_lng ?? null)
+  if (userLat !== null && userLng !== null) {
+    const dormant = getDormantZohoLocationIdSet()
+    const { data: locsRaw } = await supabase
+      .from('locations')
+      .select('zoho_location_id, location_name, phone, latitude, longitude')
+      .not('latitude', 'is', null)
+      .not('longitude', 'is', null)
+      .eq('status', 'active')
+
+    const locs = filterLocationsExcludingDormant(locsRaw, dormant)
+
+    if (locs.length > 0) {
+      const geocoded: GeocodedLocation[] = (locs as Array<{
+        zoho_location_id: string
+        latitude: number
+        longitude: number
+      }>).map((l) => ({
+        zoho_location_id: l.zoho_location_id,
+        latitude: l.latitude,
+        longitude: l.longitude,
+      }))
+      const nearestId = getNearestLocation(userLat, userLng, geocoded)
+      const nearest = locs.find((l) => String(l.zoho_location_id) === String(nearestId))
+      if (nearestId && nearest) {
+        return {
+          nearestLocationId: nearestId,
+          nearestLocationName: nearest.location_name ?? null,
+          nearestLocationPhone: nearest.phone ?? null,
+        }
+      }
+    }
+  }
+
+  if (!options.applyDefaultWhenStillNull) {
+    return empty
+  }
+
+  const { data: activeLocsRaw } = await supabase
+    .from('locations')
+    .select('zoho_location_id, location_name, phone')
+    .eq('status', 'active')
+    .order('location_name', { ascending: true })
+
+  const dormant = getDormantZohoLocationIdSet()
+  const activeLocs = filterLocationsExcludingDormant(activeLocsRaw, dormant)
+
+  if (activeLocs.length > 1) {
+    const preferred = process.env.ZOHO_DEFAULT_LOCATION_ID?.trim()
+    const match = preferred ? activeLocs.find((l) => l.zoho_location_id === preferred) : undefined
+    const row = match ?? activeLocs[0]
+    return {
+      nearestLocationId: row.zoho_location_id,
+      nearestLocationName: row.location_name ?? null,
+      nearestLocationPhone: row.phone ?? null,
+    }
+  }
+
+  return empty
 }
 
 export async function POST(request: NextRequest) {
@@ -78,29 +187,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle()
 
     if (est) {
-      // ── Compute nearest location if coords provided ────────────────────────
-      let updateLocationId: string | null = null
-      if (body.user_lat != null && body.user_lng != null &&
-          isFinite(body.user_lat) && isFinite(body.user_lng)) {
-        const { data: locs } = await supabase
-          .from('locations')
-          .select('zoho_location_id, latitude, longitude')
-          .not('latitude', 'is', null)
-          .not('longitude', 'is', null)
-          .eq('status', 'active')
-        if (locs && locs.length > 0) {
-          const geocoded: GeocodedLocation[] = (locs as Array<{
-            zoho_location_id: string
-            latitude: number
-            longitude: number
-          }>).map(l => ({
-            zoho_location_id: l.zoho_location_id,
-            latitude: l.latitude,
-            longitude: l.longitude,
-          }))
-          updateLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
-        }
-      }
+      const resolvedUpdate = await resolveWarehouseForEnquiry(supabase, body, {
+        applyDefaultWhenStillNull: false,
+      })
+      const updateLocationId = resolvedUpdate.nearestLocationId
 
       const newExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
       await supabase
@@ -118,13 +208,14 @@ export async function POST(request: NextRequest) {
         .eq('id', est.id)
 
       const estId = est.id
+      const resendLocationName = resolvedUpdate.nearestLocationName
       after(async () => {
         const waResult = await sendEstimateNotification(
           session.phone,
           {
-            customerName: session.contact_name,
+            customerName: customerFacingName(session),
             estimateNumber: est.estimate_number,
-            locationName: null,
+            locationName: resendLocationName,
             items: body.items,
             totals: { subtotal, tax, total },
             estimateUrl: est.estimate_url ?? null,
@@ -171,7 +262,7 @@ export async function POST(request: NextRequest) {
         const waResult = await sendEstimateNotification(
           session.phone,
           {
-            customerName: session.contact_name,
+            customerName: customerFacingName(session),
             estimateNumber: existing.estimate_number,
             locationName: null,
             items: existing.line_items as CartItem[],
@@ -212,60 +303,12 @@ export async function POST(request: NextRequest) {
     // malformed cookie — proceed without location label
   }
 
-  // ── Nearest-warehouse routing (server-side Haversine) ─────────────────────
-  // Coords are supplied by the client from the `wl` cookie — never exposed to
-  // other clients. Warehouses without geocoords are excluded automatically.
-  let nearestLocationId: string | null = null
-  let nearestLocationName: string | null = null
-  let nearestLocationPhone: string | null = null
-  if (body.user_lat != null && body.user_lng != null &&
-      isFinite(body.user_lat) && isFinite(body.user_lng)) {
-    const { data: locs } = await supabase
-      .from('locations')
-      .select('zoho_location_id, location_name, phone, latitude, longitude')
-      .not('latitude', 'is', null)
-      .not('longitude', 'is', null)
-      .eq('status', 'active')
-
-    if (locs && locs.length > 0) {
-      const geocoded: GeocodedLocation[] = (locs as Array<{
-        zoho_location_id: string
-        location_name: string
-        phone: string | null
-        latitude: number
-        longitude: number
-      }>).map(l => ({
-        zoho_location_id: l.zoho_location_id,
-        latitude: l.latitude,
-        longitude: l.longitude,
-      }))
-      nearestLocationId = getNearestLocation(body.user_lat, body.user_lng, geocoded)
-      const nearest = locs.find(l => l.zoho_location_id === nearestLocationId)
-      nearestLocationName = nearest?.location_name ?? null
-      nearestLocationPhone = nearest?.phone ?? null
-    }
-  }
-
-  // Zoho Books Create Estimate: location_id is required when the org has multiple locations.
-  // Without coords we still must send a valid warehouse id (default or ZOHO_DEFAULT_LOCATION_ID).
-  if (!nearestLocationId) {
-    const { data: activeLocs } = await supabase
-      .from('locations')
-      .select('zoho_location_id, location_name, phone')
-      .eq('status', 'active')
-      .order('location_name', { ascending: true })
-
-    if (activeLocs && activeLocs.length > 1) {
-      const preferred = process.env.ZOHO_DEFAULT_LOCATION_ID?.trim()
-      const match = preferred
-        ? activeLocs.find((l) => l.zoho_location_id === preferred)
-        : undefined
-      const row = match ?? activeLocs[0]
-      nearestLocationId = row.zoho_location_id
-      nearestLocationName = row.location_name ?? null
-      nearestLocationPhone = row.phone ?? null
-    }
-  }
+  // ── Nearest warehouse: prefer selector id (validated); else Haversine from coords; else default ─
+  const {
+    nearestLocationId,
+    nearestLocationName,
+    nearestLocationPhone,
+  } = await resolveWarehouseForEnquiry(supabase, body, { applyDefaultWhenStillNull: true })
 
   // ── Create estimate in Zoho Books first (Zoho owns the number) ───────────
   let zohoEstimateId: string
@@ -288,7 +331,7 @@ export async function POST(request: NextRequest) {
     })
     void sendAdminAlert(
       `⚠️ Zoho estimate creation failed\n` +
-      `Contact: ${session.contact_name} (${session.phone})\n` +
+      `Contact: ${sessionContactLine(session)} (${session.phone})\n` +
       `Error: ${msg}`
     )
     return NextResponse.json({ error: 'Failed to create estimate. Please try again.' }, { status: 502 })
@@ -334,7 +377,7 @@ export async function POST(request: NextRequest) {
     // Estimate exists in Zoho — alert admin so it can be reconciled
     void sendAdminAlert(
       `⚠️ Zoho estimate ${zohoEstimateNumber} created but Supabase insert failed\n` +
-      `Contact: ${session.contact_name} (${session.phone})\n` +
+      `Contact: ${sessionContactLine(session)} (${session.phone})\n` +
       `Zoho ID: ${zohoEstimateId}`
     )
     return NextResponse.json({ error: 'Failed to save estimate' }, { status: 500 })
@@ -368,7 +411,7 @@ export async function POST(request: NextRequest) {
     const waResult = await sendEstimateNotification(
       session.phone,
       {
-        customerName: session.contact_name,
+        customerName: customerFacingName(session),
         estimateNumber: zohoEstimateNumber,
         locationName: nearestLocationName,
         items: body.items,
@@ -396,7 +439,7 @@ export async function POST(request: NextRequest) {
       locationName: nearestLocationName,
       locationPhone: nearestLocationPhone,
       estimateNumber: zohoEstimateNumber,
-      contactName: session.contact_name,
+      contactName: sessionContactLine(session),
       contactPhone: session.phone,
       contactLocation,
       total,

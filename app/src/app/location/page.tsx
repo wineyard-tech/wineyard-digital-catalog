@@ -5,9 +5,13 @@ import { setOptions, importLibrary } from '@googlemaps/js-api-loader'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, Navigation, Search, X } from 'lucide-react'
+import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
 
 const COOKIE_NAME = 'wl'
 const COOKIE_MAX_AGE = 24 * 60 * 60 // 1 day
+
+/** @googlemaps/js-api-loader: setOptions is global; survives component remount — guard at module scope. */
+let wlGoogleMapsLoaderOptionsApplied = false
 
 interface LocationData {
   address: string
@@ -16,8 +20,21 @@ interface LocationData {
   city: string
   lat?: number
   lng?: number
-  /** Nearest Wine Yard warehouse name — set once here via /api/nearest-location (not on cart). */
+  /** Nearest Wine Yard warehouse — set on confirm via /api/nearest-location (not on cart). */
   warehouse_name?: string
+  warehouse_zoho_location_id?: string
+  warehouse_phone?: string
+  warehouse_lat?: number
+  warehouse_lng?: number
+}
+
+interface NearestLocationApiResponse {
+  name?: string | null
+  zoho_location_id?: string | number | null
+  location_name?: string | null
+  phone?: string | null
+  latitude?: number | string | null
+  longitude?: number | string | null
 }
 
 type DetectState = 'idle' | 'detecting' | 'denied'
@@ -97,7 +114,12 @@ export default function LocationPage() {
 
   function initMaps() {
     if (mapsInitRef.current) return
+    if (wlGoogleMapsLoaderOptionsApplied) {
+      mapsInitRef.current = true
+      return
+    }
     setOptions({ key: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '', v: 'beta' })
+    wlGoogleMapsLoaderOptionsApplied = true
     mapsInitRef.current = true
   }
 
@@ -109,17 +131,39 @@ export default function LocationPage() {
 
   async function confirmAndNavigate(loc: LocationData) {
     let next: LocationData = { ...loc }
-    const lat = typeof loc.lat === 'number' && isFinite(loc.lat) ? loc.lat : null
-    const lng = typeof loc.lng === 'number' && isFinite(loc.lng) ? loc.lng : null
+    const lat = parseWlFiniteCoord(loc.lat ?? null)
+    const lng = parseWlFiniteCoord(loc.lng ?? null)
     if (lat !== null && lng !== null) {
       try {
         const r = await fetch(`/api/nearest-location?lat=${lat}&lng=${lng}`)
         if (r.ok) {
-          const d: { name?: string | null } = await r.json()
-          if (d?.name) next = { ...next, warehouse_name: d.name }
+          const d = (await r.json()) as NearestLocationApiResponse
+          const whName = d.location_name ?? d.name ?? undefined
+          const whId = parseWlWarehouseZohoIdValue(d.zoho_location_id) ?? undefined
+          const whLat = parseWlFiniteCoord(d.latitude ?? null)
+          const whLng = parseWlFiniteCoord(d.longitude ?? null)
+          if (whName || whId) {
+            next = {
+              ...next,
+              ...(typeof whName === 'string' && whName ? { warehouse_name: whName } : {}),
+              ...(whId ? { warehouse_zoho_location_id: whId } : {}),
+              ...(typeof d.phone === 'string' && d.phone ? { warehouse_phone: d.phone } : {}),
+              ...(whLat !== null ? { warehouse_lat: whLat } : {}),
+              ...(whLng !== null ? { warehouse_lng: whLng } : {}),
+            }
+          }
         }
       } catch {
         /* keep location without warehouse label */
+      }
+    } else {
+      next = {
+        ...next,
+        warehouse_name: undefined,
+        warehouse_zoho_location_id: undefined,
+        warehouse_phone: undefined,
+        warehouse_lat: undefined,
+        warehouse_lng: undefined,
       }
     }
     writeLocationCookie(next)

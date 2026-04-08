@@ -6,6 +6,7 @@ import Image from 'next/image'
 import { ArrowLeft, Search, Plus, Minus, X } from 'lucide-react'
 import { usePostHog } from 'posthog-js/react'
 import type { CatalogItem } from '@/types/catalog'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
 import ProductCard from '../catalog/ProductCard'
@@ -39,9 +40,10 @@ export default function ProductDetailClient({ id }: Props) {
   const cartEntry = item ? items.find((i) => i.zoho_item_id === item.zoho_item_id) : null
   const qty = cartEntry?.quantity ?? 0
   const hasDiscount = item ? item.price_type === 'custom' && item.base_rate > item.final_price : false
-  const imgSrc = !imgError && item?.image_url
-    ? item.image_url
-    : item?.category_icon_url ?? PLACEHOLDER
+  const imgSrc = item
+    ? resolveProductThumbnailUrl(!imgError ? item.image_url : null, item.category_icon_url) ??
+      PLACEHOLDER
+    : PLACEHOLDER
 
   useEffect(() => {
     // Fast path: read from sessionStorage (set by ProductCard before navigating)
@@ -126,7 +128,8 @@ export default function ProductDetailClient({ id }: Props) {
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
-      image_url: item.image_url ?? item.category_icon_url,
+      image_url: item.image_url ?? null,
+      category_icon_url: item.category_icon_url ?? null,
     })
     ph.capture('product_added_to_cart', {
       zoho_item_id: item.zoho_item_id,

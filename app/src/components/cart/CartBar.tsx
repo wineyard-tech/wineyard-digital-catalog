@@ -1,6 +1,7 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from './CartContext'
 
 const THUMB_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -51,7 +52,9 @@ export default function CartBar({ bottom = 76 }: CartBarProps) {
         {/* Overlapping product thumbnails */}
         {thumbnails.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            {thumbnails.map((item, idx) => (
+            {thumbnails.map((item, idx) => {
+              const thumb = resolveProductThumbnailUrl(item.image_url, item.category_icon_url)
+              return (
               <div
                 key={item.zoho_item_id}
                 style={{
@@ -70,10 +73,10 @@ export default function CartBar({ bottom = 76 }: CartBarProps) {
                   justifyContent: 'center',
                 }}
               >
-                {item.image_url ? (
+                {thumb ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={item.image_url}
+                    src={thumb}
                     alt={item.item_name}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
@@ -82,7 +85,7 @@ export default function CartBar({ bottom = 76 }: CartBarProps) {
                   <img src={THUMB_PLACEHOLDER} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
               </div>
-            ))}
+            )})}
           </div>
         )}
 

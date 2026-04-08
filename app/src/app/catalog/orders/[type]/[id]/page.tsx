@@ -113,6 +113,7 @@ export default function TransactionDetailPage({
         tax_percentage: 18 as const,
         line_total: li.line_total || (li.quantity * li.rate),
         image_url: li.image_url,
+        category_icon_url: li.category_icon_url ?? null,
       }))
     )
     router.push('/cart')
@@ -179,8 +180,8 @@ export default function TransactionDetailPage({
 
       {/* Line items */}
       <div style={{ padding: '0 16px' }}>
-        {data.line_items.map((li) => (
-          <LineItemRow key={li.zoho_item_id} item={li} />
+        {data.line_items.map((li, idx) => (
+          <LineItemRow key={`${idx}-${li.zoho_item_id || li.sku || li.item_name}`} item={li} />
         ))}
       </div>
 

@@ -6,6 +6,7 @@ export interface AuthUser {
   zoho_contact_id: string
   contact_name: string
   company_name: string | null
+  contact_person_name: string | null
   phone: string
   pricebook_id: string | null
 }

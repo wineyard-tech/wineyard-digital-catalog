@@ -8,6 +8,8 @@ const CART_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 )}`
 import { useCart } from './CartContext'
 import type { EnquiryResponse } from '@/types/catalog'
+import { readWlEnquiryFieldsFromDocumentCookie } from '@/lib/catalog/read-wl-enquiry-fields'
+import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
 
 interface CartSheetProps {
   open: boolean
@@ -33,10 +35,18 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
     setLoading(true)
     setError(null)
     try {
+      const wlFields = readWlEnquiryFieldsFromDocumentCookie()
       const res = await fetch('/api/enquiry', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({
+          items,
+          user_lat: wlFields.user_lat,
+          user_lng: wlFields.user_lng,
+          ...(wlFields.nearest_location_id
+            ? { nearest_location_id: wlFields.nearest_location_id }
+            : {}),
+        }),
       })
       const data: EnquiryResponse = await res.json()
       if (!res.ok || !data.success) {
@@ -186,7 +196,7 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                   {/* Product thumbnail */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={item.image_url || CART_PLACEHOLDER}
+                    src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? CART_PLACEHOLDER}
                     alt={item.item_name}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).src = CART_PLACEHOLDER }}
                     style={{

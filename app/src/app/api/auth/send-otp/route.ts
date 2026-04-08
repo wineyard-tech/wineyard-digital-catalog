@@ -7,6 +7,7 @@ import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { isValidIndianPhone, normalisePhone, generateOTP, hashOTP } from '@/lib/auth/otp'
 import { sendOTP, sendUnregisteredAlert } from '@/lib/whatsapp/otp-service'
+import { resolveCatalogLoginByPhone } from '@/lib/auth/resolve-catalog-login'
 
 const OTP_EXPIRY_MINUTES = Number(process.env.OTP_EXPIRY_MINUTES ?? 10)
 const RATE_LIMIT_WINDOW_MINUTES = 5
@@ -59,20 +60,16 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // ── Check contacts table ──────────────────────────────────────────────────
-  const { data: contact } = await supabase
-    .from('contacts')
-    .select('zoho_contact_id, contact_name, company_name, status, online_catalogue_access')
-    .eq('phone', phone)
-    .maybeSingle()
 
-  if (!contact || contact.status !== 'active') {
-    // Capture as lead — fire-and-forget admin alert
+  const login = await resolveCatalogLoginByPhone(supabase, phone)
+
+  if (login.kind === 'unregistered' || login.kind === 'inactive') {
     await supabase.from('auth_attempts').insert({
       phone,
       attempt_type: 'unregistered',
       ip_address: ip,
       user_agent: userAgent,
+      ...(login.kind === 'inactive' ? { metadata: { reason: 'inactive_contact_or_person' } } : {}),
     })
     sendUnregisteredAlert(phone, now) // intentionally not awaited
     return NextResponse.json(
@@ -81,13 +78,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  if (!contact.online_catalogue_access) {
-    // Registered and active but not granted catalog access — no OTP sent
+  if (login.kind === 'no_catalog_access') {
     await supabase.from('auth_attempts').insert({
       phone,
       attempt_type: 'registered_no_access',
       ip_address: ip,
       user_agent: userAgent,
+      metadata: { gate: login.reason },
     })
     return NextResponse.json(
       { success: true, registered: true, catalogAccess: false },
@@ -131,7 +128,12 @@ export async function POST(request: NextRequest) {
     attempt_type: 'registered_otp_sent',
     ip_address: ip,
     user_agent: userAgent,
-    metadata: result.messageId ? { message_id: result.messageId } : {},
+    metadata: {
+      ...(result.messageId ? { message_id: result.messageId } : {}),
+      ...(login.kind === 'ok' && login.match === 'contact_person'
+        ? { zoho_contact_person_id: login.person!.zoho_contact_person_id }
+        : {}),
+    },
   })
 
   return NextResponse.json(

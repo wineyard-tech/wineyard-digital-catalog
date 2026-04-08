@@ -30,17 +30,26 @@ function VerifyContent() {
     })
     const data = (await res.json()) as {
       success?: boolean
-      user?: { zoho_contact_id: string; contact_name: string; company_name: string | null; phone: string; pricebook_id: string | null }
+      user?: {
+        zoho_contact_id: string
+        contact_name: string
+        company_name: string | null
+        contact_person_name: string | null
+        phone: string
+        pricebook_id: string | null
+      }
       attemptsLeft?: number
       error?: string
     }
 
     if (res.ok && data.success && data.user) {
-      // Identify in PostHog — merges prior guest session history into this profile
+      const displayName = data.user.contact_person_name ?? data.user.contact_name
       ph.identify(data.user.zoho_contact_id, {
-        name: data.user.contact_name,
+        name: displayName,
         phone: data.user.phone,
         pricebook_id: data.user.pricebook_id,
+        integrator_contact_name: data.user.contact_name,
+        ...(data.user.contact_person_name ? { contact_person_name: data.user.contact_person_name } : {}),
       })
       ph.register({ user_type: 'registered_user' })
       ph.capture('user_logged_in', {

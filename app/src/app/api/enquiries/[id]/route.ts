@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
+import { fetchCategoryIconMap } from '@/lib/pricing'
 import { getZohoEstimateLineItems } from '@/lib/zoho'
 import type { EnquiryDetail, EnquiryLineItemDetail } from '@/types/catalog'
 
@@ -65,21 +66,33 @@ export async function GET(
   // Enrich line items with live stock data from items table
   const zohoItemIds = rawLineItems.map((li) => li.zoho_item_id || li.item_id).filter(Boolean) as string[]
 
-  let stockMap = new Map<string, { available_stock: number | null; image_url: string | null; item_name: string | null; sku: string | null }>()
+  type StockRow = {
+    available_stock: number | null
+    image_url: string | null
+    category_icon_url: string | null
+    item_name: string | null
+    sku: string | null
+  }
+  let stockMap = new Map<string, StockRow>()
 
   if (zohoItemIds.length > 0) {
+    const categoryIconMap = await fetchCategoryIconMap(supabase)
     const { data: itemRows } = await supabase
       .from('items')
-      .select('zoho_item_id, available_stock, image_urls, item_name, sku')
+      .select('zoho_item_id, available_stock, image_urls, item_name, sku, category_name')
       .in('zoho_item_id', zohoItemIds)
 
     for (const row of itemRows ?? []) {
       const imageUrl = Array.isArray(row.image_urls) && row.image_urls.length > 0
         ? (row.image_urls[0] as string)
         : null
+      const cn = (row.category_name as string | null) ?? null
+      const category_icon_url =
+        cn && categoryIconMap[cn] ? categoryIconMap[cn] : null
       stockMap.set(row.zoho_item_id, {
         available_stock: row.available_stock ?? null,
         image_url: imageUrl,
+        category_icon_url,
         item_name: row.item_name ?? null,
         sku: row.sku ?? null,
       })
@@ -113,6 +126,7 @@ export async function GET(
       tax_percentage: Number(li.tax_percentage) || 0,
       line_total: lineTotal || (qty * rate),
       image_url: stock?.image_url ?? null,
+      category_icon_url: stock?.category_icon_url ?? null,
       available_stock,
       stock_status,
     }

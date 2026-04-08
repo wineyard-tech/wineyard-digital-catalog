@@ -231,7 +231,24 @@ async function handleUpsert(
   const personsArrayPresent = Array.isArray(contact.contact_persons)
 
   if (!personsArrayPresent) {
-    logger.info('PERSONS', { contact_id: contactId, note: 'contact_persons absent from payload — skipping persons sync' })
+    logger.info('PERSONS', {
+      contact_id: contactId,
+      note: 'contact_persons absent from payload — propagating parent catalog flags to existing persons only',
+    })
+    const { error: propagateErr } = await supabase
+      .from('contact_persons')
+      .update({
+        online_catalogue_access: contactRow.online_catalogue_access,
+        catalog_access: contactRow.catalog_access,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('zoho_contact_id', contactId)
+
+    if (propagateErr) {
+      logger.warn('PERSONS_PROPAGATE_WARN', { contact_id: contactId, err: propagateErr.message })
+    } else {
+      logger.info('PERSONS_PROPAGATE_OK', { contact_id: contactId })
+    }
   } else {
     const validPersons = persons.filter((p) => p.contact_person_id)
     const incomingIds  = validPersons.map((p) => p.contact_person_id)
@@ -240,29 +257,24 @@ async function handleUpsert(
 
     // ── a) UPSERT active persons from payload ──────────────────────────────
     if (validPersons.length > 0) {
-      const personRows = validPersons.map((p) => {
-        const personCfFields: Array<{ api_name?: string; value?: unknown }> =
-          Array.isArray(p.custom_fields) ? p.custom_fields : []
-        const personOnlineCatalogEntry = personCfFields.find(f => f.api_name === 'cf_online_catalogue_access')
-        const online_catalogue_access =
-          personOnlineCatalogEntry?.value === true || personOnlineCatalogEntry?.value === 'YES' || false
-        const catalog_access = online_catalogue_access || false
-        return {
-          zoho_contact_person_id:   p.contact_person_id,
-          zoho_contact_id:          contactId,
-          first_name:               p.first_name || null,
-          last_name:                p.last_name || null,
-          email:                    p.email || null,
-          phone:                    normalizeIndianPhone(p.phone),
-          mobile:                   normalizeIndianPhone(p.mobile),
-          is_primary:               p.is_primary_contact ?? false,
-          communication_preference: p.communication_preference ?? null,
-          online_catalogue_access,
-          catalog_access,
-          status:                   'active',
-          updated_at:               new Date().toISOString(),
-        }
-      })
+      // Person rows inherit parent contact catalog flags so access stays aligned with the integrator.
+      const parentOnlineCatalogue = contactRow.online_catalogue_access
+      const parentCatalogAccess = contactRow.catalog_access
+      const personRows = validPersons.map((p) => ({
+        zoho_contact_person_id:   p.contact_person_id,
+        zoho_contact_id:          contactId,
+        first_name:               p.first_name || null,
+        last_name:                p.last_name || null,
+        email:                    p.email || null,
+        phone:                    normalizeIndianPhone(p.phone),
+        mobile:                   normalizeIndianPhone(p.mobile),
+        is_primary:               p.is_primary_contact ?? false,
+        communication_preference: p.communication_preference ?? null,
+        online_catalogue_access:  parentOnlineCatalogue,
+        catalog_access:           parentCatalogAccess,
+        status:                   'active',
+        updated_at:               new Date().toISOString(),
+      }))
 
       const { error: upsertErr } = await supabase
         .from('contact_persons')
