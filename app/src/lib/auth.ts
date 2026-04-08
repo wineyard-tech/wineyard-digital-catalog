@@ -22,9 +22,15 @@ export async function getSession(token: string): Promise<SessionPayload | null> 
     .select(`
       zoho_contact_id,
       phone,
+      zoho_contact_person_id,
       contacts (
         contact_name,
+        company_name,
         pricebook_id
+      ),
+      contact_persons (
+        first_name,
+        last_name
       )
     `)
     .eq('token', token)
@@ -44,11 +50,27 @@ export async function getSession(token: string): Promise<SessionPayload | null> 
   const rawContacts = data.contacts as unknown
   const contact = (
     Array.isArray(rawContacts) ? rawContacts[0] : rawContacts
-  ) as { contact_name: string; pricebook_id: string | null } | null
+  ) as { contact_name: string; company_name: string | null; pricebook_id: string | null } | null
+
+  const rawPersons = data.contact_persons as unknown
+  const personRow = (
+    Array.isArray(rawPersons) ? rawPersons[0] : rawPersons
+  ) as { first_name: string | null; last_name: string | null } | null
+
+  const personNameParts = [personRow?.first_name, personRow?.last_name].filter(Boolean).join(' ').trim()
+  const contact_person_name =
+    data.zoho_contact_person_id && personNameParts.length > 0
+      ? personNameParts
+      : data.zoho_contact_person_id
+        ? 'Team member'
+        : null
 
   return {
-    zoho_contact_id: data.zoho_contact_id,
+    zoho_contact_id: data.zoho_contact_id ?? '',
     contact_name: contact?.contact_name ?? '',
+    company_name: contact?.company_name ?? null,
+    contact_person_name,
+    zoho_contact_person_id: data.zoho_contact_person_id ?? null,
     phone: data.phone,
     pricebook_id: contact?.pricebook_id ?? null,
   }

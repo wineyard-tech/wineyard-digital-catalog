@@ -46,6 +46,7 @@ export type Database = {
           ref_id: string
           used: boolean
           zoho_contact_id: string | null
+          zoho_contact_person_id: string | null
         }
         Insert: {
           attempts?: number
@@ -58,6 +59,7 @@ export type Database = {
           ref_id: string
           used?: boolean
           zoho_contact_id?: string | null
+          zoho_contact_person_id?: string | null
         }
         Update: {
           attempts?: number
@@ -70,6 +72,7 @@ export type Database = {
           ref_id?: string
           used?: boolean
           zoho_contact_id?: string | null
+          zoho_contact_person_id?: string | null
         }
         Relationships: [
           {
@@ -78,6 +81,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["zoho_contact_id"]
+          },
+          {
+            foreignKeyName: "auth_requests_zoho_contact_person_id_fkey"
+            columns: ["zoho_contact_person_id"]
+            isOneToOne: false
+            referencedRelation: "contact_persons"
+            referencedColumns: ["zoho_contact_person_id"]
           },
         ]
       }
@@ -154,6 +164,7 @@ export type Database = {
       }
       contact_persons: {
         Row: {
+          catalog_access: boolean
           communication_preference: Json | null
           created_at: string | null
           email: string | null
@@ -161,12 +172,15 @@ export type Database = {
           is_primary: boolean | null
           last_name: string | null
           mobile: string | null
+          online_catalogue_access: boolean
           phone: string | null
+          status: string
           updated_at: string | null
           zoho_contact_id: string
           zoho_contact_person_id: string
         }
         Insert: {
+          catalog_access?: boolean
           communication_preference?: Json | null
           created_at?: string | null
           email?: string | null
@@ -174,12 +188,15 @@ export type Database = {
           is_primary?: boolean | null
           last_name?: string | null
           mobile?: string | null
+          online_catalogue_access?: boolean
           phone?: string | null
+          status?: string
           updated_at?: string | null
           zoho_contact_id: string
           zoho_contact_person_id: string
         }
         Update: {
+          catalog_access?: boolean
           communication_preference?: Json | null
           created_at?: string | null
           email?: string | null
@@ -187,7 +204,9 @@ export type Database = {
           is_primary?: boolean | null
           last_name?: string | null
           mobile?: string | null
+          online_catalogue_access?: boolean
           phone?: string | null
+          status?: string
           updated_at?: string | null
           zoho_contact_id?: string
           zoho_contact_person_id?: string
@@ -224,6 +243,8 @@ export type Database = {
           status: string | null
           updated_at: string | null
           zoho_contact_id: string
+          catalog_access: boolean
+          online_catalogue_access: boolean
         }
         Insert: {
           billing_address?: Json | null
@@ -246,6 +267,8 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           zoho_contact_id: string
+          catalog_access?: boolean
+          online_catalogue_access?: boolean
         }
         Update: {
           billing_address?: Json | null
@@ -268,6 +291,8 @@ export type Database = {
           status?: string | null
           updated_at?: string | null
           zoho_contact_id?: string
+          catalog_access?: boolean
+          online_catalogue_access?: boolean
         }
         Relationships: []
       }
@@ -693,6 +718,7 @@ export type Database = {
           token: string
           user_agent: string | null
           zoho_contact_id: string | null
+          zoho_contact_person_id: string | null
         }
         Insert: {
           created_at?: string | null
@@ -704,6 +730,7 @@ export type Database = {
           token?: string
           user_agent?: string | null
           zoho_contact_id?: string | null
+          zoho_contact_person_id?: string | null
         }
         Update: {
           created_at?: string | null
@@ -715,6 +742,7 @@ export type Database = {
           token?: string
           user_agent?: string | null
           zoho_contact_id?: string | null
+          zoho_contact_person_id?: string | null
         }
         Relationships: [
           {
@@ -723,6 +751,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "contacts"
             referencedColumns: ["zoho_contact_id"]
+          },
+          {
+            foreignKeyName: "sessions_zoho_contact_person_id_fkey"
+            columns: ["zoho_contact_person_id"]
+            isOneToOne: false
+            referencedRelation: "contact_persons"
+            referencedColumns: ["zoho_contact_person_id"]
           },
         ]
       }

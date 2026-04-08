@@ -20,8 +20,8 @@ export default async function CategoryPage({ params }: Props) {
   if (sessionToken) {
     const session = await getSession(sessionToken)
     if (session) {
-      contactName = session.contact_name ?? null
       zohoContactId = session.zoho_contact_id
+      contactName = session.contact_person_name ?? session.contact_name
     }
   }
 

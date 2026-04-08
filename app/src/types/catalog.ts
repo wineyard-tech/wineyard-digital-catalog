@@ -29,7 +29,12 @@ export interface CartItem {
 
 export interface SessionPayload {
   zoho_contact_id: string;
+  /** Integrator (parent contact) display name — Zoho-aligned. */
   contact_name: string;
+  company_name: string | null;
+  /** When logged in as a contact person; use for customer-facing UI / WhatsApp copy. */
+  contact_person_name: string | null;
+  zoho_contact_person_id: string | null;
   phone: string;
   pricebook_id: string | null;
 }
@@ -45,6 +50,8 @@ export interface EnquiryRequest {
   estimate_id?: string; // when set, update this estimate instead of creating a new one
   user_lat?: number | null;
   user_lng?: number | null;
+  /** Zoho warehouse id from location selector (`wl` cookie); server validates against DB. */
+  nearest_location_id?: string | null;
 }
 
 export interface OrderRequest {

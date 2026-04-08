@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers'
 import { getSession } from '@/lib/auth'
+import { accountDisplayFromSession } from '@/lib/auth/account-display'
 import { createServiceClient } from '@/lib/supabase/server'
 import HomeClient, { type Category } from '@/components/catalog/HomeClient'
 
@@ -12,12 +13,15 @@ export default async function CatalogPage({
   const cookieStore = await cookies()
   const sessionToken = cookieStore.get('session_token')?.value
 
-  let contactName: string | null = null
+  let accountPrimary: string | null = null
+  let accountSubtitle: string | null = null
 
   if (sessionToken) {
     const session = await getSession(sessionToken)
     if (session) {
-      contactName = session.contact_name ?? null
+      const d = accountDisplayFromSession(session)
+      accountPrimary = d.accountPrimary
+      accountSubtitle = d.accountSubtitle
     }
   }
 
@@ -50,7 +54,8 @@ export default async function CatalogPage({
 
   return (
     <HomeClient
-      contactName={contactName}
+      accountPrimary={accountPrimary}
+      accountSubtitle={accountSubtitle}
       categories={categories}
       initialQuery={q ?? ''}
     />

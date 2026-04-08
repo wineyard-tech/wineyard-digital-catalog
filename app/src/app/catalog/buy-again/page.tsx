@@ -5,10 +5,12 @@ import { useRouter } from 'next/navigation'
 import { User, ArrowLeft, LogOut, Clock, TrendingUp } from 'lucide-react'
 import posthog from 'posthog-js'
 import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
+import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
 import ProductCard from '@/components/catalog/ProductCard'
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
 import { useScrollDirection } from '@/hooks/useScrollDirection'
 import { useAuth } from '@/hooks/useAuth'
+import { accountDisplayFields } from '@/lib/auth/account-display'
 import type { CatalogItem } from '@/types/catalog'
 import type { PurchasedProduct } from '@/app/api/buy-again/route'
 
@@ -87,7 +89,7 @@ export default function BuyAgainPage() {
       const match = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('wl='))
       if (match) {
         const data = JSON.parse(decodeURIComponent(match.slice(3)))
-        setLocationArea(data.area || data.city || null)
+        setLocationArea(getWlHeaderLabelFromParsed(data))
       }
     } catch { /* ignore malformed cookie */ }
   }, [])
@@ -205,6 +207,10 @@ export default function BuyAgainPage() {
       )
     : products
 
+  const { accountPrimary, accountSubtitle } = user
+    ? accountDisplayFields(user)
+    : { accountPrimary: null as string | null, accountSubtitle: null as string | null }
+
   // ── Sticky catalog-style header (shared component) ──────────────────────────
   const header = (
     <header
@@ -220,7 +226,7 @@ export default function BuyAgainPage() {
       <CatalogPageHeader
         hidden={hidden}
         locationArea={locationArea}
-        contactName={isAuthenticated ? (user?.contact_name ?? null) : null}
+        contactName={isAuthenticated ? accountPrimary : null}
         onAvatarClick={() => isAuthenticated ? setSheetOpen(true) : router.push('/auth/login?from=catalog')}
         onSearch={(q) => setSearchQuery(q)}
       />
@@ -285,7 +291,15 @@ export default function BuyAgainPage() {
         )}
 
         {/* Profile sheet */}
-        {sheetOpen && <ProfileSheet name={user?.contact_name ?? ''} loggingOut={loggingOut} onClose={() => setSheetOpen(false)} onLogout={handleLogout} />}
+        {sheetOpen && user && (
+          <ProfileSheet
+            primary={accountPrimary ?? ''}
+            subtitle={accountSubtitle}
+            loggingOut={loggingOut}
+            onClose={() => setSheetOpen(false)}
+            onLogout={handleLogout}
+          />
+        )}
       </div>
     )
   }
@@ -329,7 +343,15 @@ export default function BuyAgainPage() {
         ))}
       </div>
 
-      {sheetOpen && <ProfileSheet name={user?.contact_name ?? ''} loggingOut={loggingOut} onClose={() => setSheetOpen(false)} onLogout={handleLogout} />}
+      {sheetOpen && user && (
+        <ProfileSheet
+          primary={accountPrimary ?? ''}
+          subtitle={accountSubtitle}
+          loggingOut={loggingOut}
+          onClose={() => setSheetOpen(false)}
+          onLogout={handleLogout}
+        />
+      )}
     </div>
   )
 }
@@ -337,9 +359,14 @@ export default function BuyAgainPage() {
 // ── Profile sheet (matches CatalogClient sheet exactly) ───────────────────────
 
 function ProfileSheet({
-  name, loggingOut, onClose, onLogout,
+  primary,
+  subtitle,
+  loggingOut,
+  onClose,
+  onLogout,
 }: {
-  name: string
+  primary: string
+  subtitle: string | null
   loggingOut: boolean
   onClose: () => void
   onLogout: () => void
@@ -358,8 +385,8 @@ function ProfileSheet({
           <User size={26} color="#0066CC" />
         </div>
         <div>
-          <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>{name}</p>
-          <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>Registered customer</p>
+          <p style={{ margin: '0 0 2px', fontSize: 17, fontWeight: 700, color: '#0F172A' }}>{primary}</p>
+          {subtitle ? <p style={{ margin: 0, fontSize: 13, color: '#64748B' }}>{subtitle}</p> : null}
         </div>
       </div>
 
