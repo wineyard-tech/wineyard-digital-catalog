@@ -16,6 +16,10 @@ import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
 import { getPostHogServer } from '@/lib/posthog-node'
 import { customerFacingName, sessionContactLine } from '@/lib/auth/account-display'
 import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
+import {
+  filterLocationsExcludingDormant,
+  getDormantZohoLocationIdSet,
+} from '@/lib/catalog/dormant-locations'
 
 /** SHA-256 of the sorted+serialised line_items — used for duplicate detection. */
 function buildCartHash(items: CartItem[]): string {
@@ -34,13 +38,6 @@ async function withOneRetry<T>(fn: () => Promise<T>, delayMs = 2000): Promise<T>
 }
 
 type ServiceSupabase = ReturnType<typeof createServiceClient>
-
-function dormantZohoLocationIds(): string[] {
-  return (
-    process.env.ZOHO_DORMANT_LOCATION_IDS?.split(',')?.map((id: string) => id.trim()).filter(Boolean) ??
-    []
-  )
-}
 
 interface WarehouseResolution {
   nearestLocationId: string | null
@@ -65,17 +62,14 @@ async function resolveWarehouseForEnquiry(
 
   const rawId = parseWlWarehouseZohoIdValue(body.nearest_location_id ?? null) ?? ''
   if (rawId) {
-    const dormant = dormantZohoLocationIds()
-    let q = supabase
+    const dormant = getDormantZohoLocationIdSet()
+    const { data: row } = await supabase
       .from('locations')
       .select('zoho_location_id, location_name, phone')
       .eq('zoho_location_id', rawId)
       .eq('status', 'active')
-    if (dormant.length > 0) {
-      q = q.not('zoho_location_id', 'in', dormant)
-    }
-    const { data: row } = await q.maybeSingle()
-    if (row) {
+      .maybeSingle()
+    if (row && !dormant.has(String(row.zoho_location_id))) {
       return {
         nearestLocationId: row.zoho_location_id,
         nearestLocationName: row.location_name ?? null,
@@ -87,19 +81,17 @@ async function resolveWarehouseForEnquiry(
   const userLat = parseWlFiniteCoord(body.user_lat ?? null)
   const userLng = parseWlFiniteCoord(body.user_lng ?? null)
   if (userLat !== null && userLng !== null) {
-    const dormant = dormantZohoLocationIds()
-    let locQuery = supabase
+    const dormant = getDormantZohoLocationIdSet()
+    const { data: locsRaw } = await supabase
       .from('locations')
       .select('zoho_location_id, location_name, phone, latitude, longitude')
       .not('latitude', 'is', null)
       .not('longitude', 'is', null)
       .eq('status', 'active')
-    if (dormant.length > 0) {
-      locQuery = locQuery.not('zoho_location_id', 'in', dormant)
-    }
-    const { data: locs } = await locQuery
 
-    if (locs && locs.length > 0) {
+    const locs = filterLocationsExcludingDormant(locsRaw, dormant)
+
+    if (locs.length > 0) {
       const geocoded: GeocodedLocation[] = (locs as Array<{
         zoho_location_id: string
         latitude: number
@@ -125,13 +117,16 @@ async function resolveWarehouseForEnquiry(
     return empty
   }
 
-  const { data: activeLocs } = await supabase
+  const { data: activeLocsRaw } = await supabase
     .from('locations')
     .select('zoho_location_id, location_name, phone')
     .eq('status', 'active')
     .order('location_name', { ascending: true })
 
-  if (activeLocs && activeLocs.length > 1) {
+  const dormant = getDormantZohoLocationIdSet()
+  const activeLocs = filterLocationsExcludingDormant(activeLocsRaw, dormant)
+
+  if (activeLocs.length > 1) {
     const preferred = process.env.ZOHO_DEFAULT_LOCATION_ID?.trim()
     const match = preferred ? activeLocs.find((l) => l.zoho_location_id === preferred) : undefined
     const row = match ?? activeLocs[0]

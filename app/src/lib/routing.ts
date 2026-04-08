@@ -52,12 +52,14 @@ export function getNearestLocation(
     }
   }
 
-  // Beyond this radius, fall back to ZOHO_DEFAULT_LOCATION_ID (e.g. flagship warehouse).
-  // 50km was too tight for outer Telangana towns (still served by peripheral warehouses).
+  // Beyond this radius, prefer ZOHO_DEFAULT_LOCATION_ID when set; otherwise keep geometric
+  // nearest — returning null here made /api/nearest-location return all-nulls for every user
+  // when the env default was missing or the default row had no coordinates in DB.
   const maxKmRaw = process.env.NEAREST_WAREHOUSE_MAX_DIRECT_KM?.trim()
   const maxKm = maxKmRaw !== undefined && maxKmRaw !== '' ? Number(maxKmRaw) : 250
   if (isFinite(maxKm) && maxKm > 0 && minDist > maxKm) {
-    return process.env.ZOHO_DEFAULT_LOCATION_ID?.trim() ?? null
+    const def = process.env.ZOHO_DEFAULT_LOCATION_ID?.trim()
+    if (def) return def
   }
 
   return nearest.zoho_location_id

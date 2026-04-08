@@ -2,13 +2,10 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getNearestLocation, type GeocodedLocation } from '@/lib/routing'
-
-function dormantZohoLocationIds(): string[] {
-  return (
-    process.env.ZOHO_DORMANT_LOCATION_IDS?.split(',')?.map((id: string) => id.trim()).filter(Boolean) ??
-    []
-  )
-}
+import {
+  filterLocationsExcludingDormant,
+  getDormantZohoLocationIdSet,
+} from '@/lib/catalog/dormant-locations'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl
@@ -29,19 +26,28 @@ export async function GET(request: NextRequest) {
   }
 
   const supabase = createServiceClient()
-  const dormant = dormantZohoLocationIds()
-  let locQuery = supabase
+  const dormant = getDormantZohoLocationIdSet()
+  const { data: locsRaw, error: locError } = await supabase
     .from('locations')
     .select('zoho_location_id, location_name, phone, latitude, longitude')
     .not('latitude', 'is', null)
     .not('longitude', 'is', null)
     .eq('status', 'active')
-  if (dormant.length > 0) {
-    locQuery = locQuery.not('zoho_location_id', 'in', dormant)
-  }
-  const { data: locs } = await locQuery
 
-  if (!locs || locs.length === 0) {
+  if (locError) {
+    console.error('[nearest-location] Supabase locations query failed:', locError.message)
+    return NextResponse.json(
+      { ...empty, error: 'LOCATION_QUERY_FAILED' },
+      { status: 500 }
+    )
+  }
+
+  const locs = filterLocationsExcludingDormant(locsRaw, dormant)
+
+  if (locs.length === 0) {
+    console.warn(
+      '[nearest-location] No active locations with non-null latitude/longitude (after dormant filter). Sync locations in Supabase or review ZOHO_DORMANT_LOCATION_IDS.'
+    )
     return NextResponse.json(empty)
   }
 
@@ -57,18 +63,54 @@ export async function GET(request: NextRequest) {
   }))
 
   const nearestId = getNearestLocation(lat, lng, geocoded)
-  const row = nearestId ? locs.find(l => l.zoho_location_id === nearestId) : undefined
+  if (!nearestId) {
+    return NextResponse.json(empty)
+  }
 
-  if (!row) {
+  const row =
+    locs.find((l) => String(l.zoho_location_id) === String(nearestId)) ?? null
+
+  let resolved = row
+  if (!resolved) {
+    const { data: fallbackRow, error: fbErr } = await supabase
+      .from('locations')
+      .select('zoho_location_id, location_name, phone, latitude, longitude')
+      .eq('zoho_location_id', nearestId)
+      .eq('status', 'active')
+      .maybeSingle()
+    if (fbErr) {
+      console.error('[nearest-location] Fallback location lookup failed:', fbErr.message)
+    }
+    const fb = fallbackRow
+    resolved =
+      fb && !dormant.has(String(fb.zoho_location_id)) ? fb : null
+  }
+
+  if (!resolved) {
+    console.warn(
+      '[nearest-location] nearestId not found in DB:',
+      nearestId,
+      '(check zoho_location_id vs ZOHO_DEFAULT_LOCATION_ID)'
+    )
     return NextResponse.json(empty)
   }
 
   return NextResponse.json({
-    name: row.location_name,
-    zoho_location_id: String(row.zoho_location_id),
-    location_name: row.location_name,
-    phone: row.phone ?? null,
-    latitude: typeof row.latitude === 'number' ? row.latitude : Number(row.latitude),
-    longitude: typeof row.longitude === 'number' ? row.longitude : Number(row.longitude),
+    name: resolved.location_name,
+    zoho_location_id: String(resolved.zoho_location_id),
+    location_name: resolved.location_name,
+    phone: resolved.phone ?? null,
+    latitude:
+      resolved.latitude == null
+        ? null
+        : typeof resolved.latitude === 'number'
+          ? resolved.latitude
+          : Number(resolved.latitude),
+    longitude:
+      resolved.longitude == null
+        ? null
+        : typeof resolved.longitude === 'number'
+          ? resolved.longitude
+          : Number(resolved.longitude),
   })
 }
