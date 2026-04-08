@@ -240,30 +240,6 @@ export async function createEstimate(
   const today = formatOrgDateYmd(now, orgTz)
   const expiry = formatOrgDateYmd(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), orgTz)
 
-  console.info('[zoho] createEstimate date fields', { orgTz, today, expiry })
-
-  // #region agent log
-  fetch('http://127.0.0.1:7920/ingest/84f7a974-7c01-407e-9a5f-030d22ee9a5c', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cdbdb9' },
-    body: JSON.stringify({
-      sessionId: 'cdbdb9',
-      runId: 'post-fix',
-      hypothesisId: 'H4',
-      location: 'lib/zoho.ts:createEstimate',
-      message: 'Zoho estimate payload meta',
-      data: {
-        orgTz,
-        today,
-        expiry,
-        lineCount: lineItems.length,
-        hasLocationId: Boolean(options?.locationId),
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-  // #endregion
-
   const body = {
     customer_id: contactId,
     date: today,
