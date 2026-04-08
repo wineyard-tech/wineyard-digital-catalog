@@ -5,6 +5,36 @@ import type { CartItem } from '@/types/catalog'
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'
 
+/** Zoho Books `date` / `expiry_date` expect YYYY-MM-DD per API docs — use org timezone, not UTC midnight. */
+function formatOrgDateYmd(d: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d)
+  const y = parts.find((p) => p.type === 'year')?.value
+  const m = parts.find((p) => p.type === 'month')?.value
+  const day = parts.find((p) => p.type === 'day')?.value
+  if (!y || !m || !day) {
+    return d.toISOString().slice(0, 10)
+  }
+  return `${y}-${m}-${day}`
+}
+
+/** Rich error string for logs (Vercel): surfaces Zoho JSON `code` / `message` when present. */
+function formatZohoEstimateError(status: number, errText: string): string {
+  try {
+    const parsed = JSON.parse(errText) as { code?: number; message?: string }
+    if (parsed && (parsed.message != null || parsed.code != null)) {
+      return `Zoho create estimate failed: http=${status} code=${parsed.code} message=${JSON.stringify(parsed.message)} raw=${errText}`
+    }
+  } catch {
+    // not JSON
+  }
+  return `Zoho create estimate failed: http=${status} — ${errText}`
+}
+
 /**
  * Returns a valid Zoho access token.
  * Reads cached token from zoho_tokens; refreshes if within 5 minutes of expiry.
@@ -187,19 +217,15 @@ export async function createEstimate(
   const token = await getAccessToken()
   const orgId = process.env.ZOHO_ORG_ID!
 
-  // Compute GST for the estimate notes — shown informatively on the Zoho portal document.
-  // tax_treatment: 'out_of_scope' keeps Zoho Total = Subtotal (no tax added to total),
-  // while the notes field surfaces the 18% GST breakdown that customers need to see.
-  const lineSubtotal = lineItems.reduce((sum, item) => sum + item.rate * item.quantity, 0)
-  const gstAmount = Math.round(lineSubtotal * 0.18)
-  const gstNote =
-    `GST @18% (CGST 9% + SGST 9%): ₹${gstAmount.toLocaleString('en-IN')} — applicable on final invoice`
+  // Notes: GST messaging on the Zoho PDF. tax_treatment out_of_scope keeps Total = Subtotal.
+  const gstNote = `All prices inclusive of GST`
   const notesText = [gstNote, options?.notes].filter(Boolean).join('\n')
 
-  // Zoho Books India requires `date` in YYYY-MM-DD; omitting it causes "Invalid time format"
-  // (error code 13) when Zoho tries to derive the date from org timezone settings.
-  const today = new Date().toISOString().slice(0, 10)
-  const expiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  // https://www.zoho.com/books/api/v3/estimates/#create-an-estimate — date / expiry_date: YYYY-MM-DD
+  const orgTz = process.env.ZOHO_ORG_TIMEZONE?.trim() || 'Asia/Kolkata'
+  const now = new Date()
+  const today = formatOrgDateYmd(now, orgTz)
+  const expiry = formatOrgDateYmd(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), orgTz)
 
   const body = {
     customer_id: contactId,
@@ -210,12 +236,12 @@ export async function createEstimate(
     // GST info is surfaced via the notes field above instead of Zoho's tax engine.
     is_inclusive_tax: false,
     tax_treatment: 'out_of_scope',
+    // Omit tax_id when not applying Books tax — empty string is not a valid numeric tax id per API docs.
     line_items: lineItems.map((item) => ({
       item_id: item.zoho_item_id,
       name: item.item_name,
       quantity: item.quantity,
-      rate: item.rate,   // pricebook_rate ?? base_rate — resolved by resolvePrice()
-      tax_id: '',        // belt-and-suspenders: clear item-level tax override
+      rate: item.rate, // pricebook_rate ?? base_rate — resolved by resolvePrice()
     })),
     notes: notesText,
     ...(options?.locationId ? { location_id: options.locationId } : {}),
@@ -232,7 +258,7 @@ export async function createEstimate(
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`Zoho create estimate failed: ${res.status} — ${errText}`)
+    throw new Error(formatZohoEstimateError(res.status, errText))
   }
 
   return res.json()

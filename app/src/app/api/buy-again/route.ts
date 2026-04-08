@@ -33,62 +33,74 @@ export async function GET(request: NextRequest) {
 
   const supabase = createServiceClient()
 
-  // ── 1. Fetch purchase history from invoices, estimates, and sales_orders ──
-  const [invoicesResult, estimatesResult, ordersResult] = await Promise.all([
-    supabase
-      .from('invoices')
-      .select('line_items, date')
-      .eq('zoho_contact_id', session.zoho_contact_id)
-      .order('date', { ascending: false })
-      .limit(100),
+  // ── 1. Fetch orders from all sources: estimates, sales_orders, and invoices ───
+  const [estimatesRes, ordersRes, invoicesRes] = await Promise.allSettled([
     supabase
       .from('estimates')
       .select('line_items, created_at')
       .eq('zoho_contact_id', session.zoho_contact_id)
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(50),
     supabase
       .from('sales_orders')
       .select('line_items, created_at')
       .eq('zoho_contact_id', session.zoho_contact_id)
       .order('created_at', { ascending: false })
-      .limit(100),
+      .limit(50),
+    supabase
+      .from('invoices')
+      .select('line_items, created_at')
+      .eq('zoho_contact_id', session.zoho_contact_id)
+      .order('created_at', { ascending: false })
+      .limit(50),
   ])
 
-  if (invoicesResult.error) console.error('[buy-again] invoices fetch error:', invoicesResult.error)
-  if (estimatesResult.error) console.error('[buy-again] estimates fetch error:', estimatesResult.error)
-  if (ordersResult.error) console.error('[buy-again] orders fetch error:', ordersResult.error)
+  const allOrders = []
+  if (estimatesRes.status === 'fulfilled' && estimatesRes.value.data) {
+    allOrders.push(...(estimatesRes.value.data ?? []))
+  }
+  if (ordersRes.status === 'fulfilled' && ordersRes.value.data) {
+    allOrders.push(...(ordersRes.value.data ?? []))
+  }
+  if (invoicesRes.status === 'fulfilled' && invoicesRes.value.data) {
+    allOrders.push(...(invoicesRes.value.data ?? []))
+  }
+
+  // Sort by created_at descending
+  allOrders.sort((a, b) => {
+    const dateA = new Date(a.created_at).getTime()
+    const dateB = new Date(b.created_at).getTime()
+    return dateB - dateA
+  })
 
   // ── 2. Aggregate products across all sources ───────────────────────────────
   // Track per-product: latest purchase date, cumulative qty, and order count.
   const productMap = new Map<string, { last_purchased_at: string; total_qty: number; order_count: number }>()
 
-  function accumulateLineItems(lineItems: CartItem[], dateStr: string) {
+  for (const order of allOrders) {
+    const dateStr =
+      typeof order.created_at === 'string'
+        ? order.created_at
+        : order.created_at != null
+          ? new Date(order.created_at as string | Date).toISOString()
+          : ''
+    const lineItems = Array.isArray(order.line_items) ? (order.line_items as CartItem[]) : []
     for (const item of lineItems) {
       if (!item.zoho_item_id) continue
+      const qty = Number(item.quantity) || 0
       const existing = productMap.get(item.zoho_item_id)
       if (existing) {
         if (dateStr > existing.last_purchased_at) existing.last_purchased_at = dateStr
-        existing.total_qty += item.quantity
+        existing.total_qty += qty
         existing.order_count++
       } else {
         productMap.set(item.zoho_item_id, {
           last_purchased_at: dateStr,
-          total_qty: item.quantity,
+          total_qty: qty,
           order_count: 1,
         })
       }
     }
-  }
-
-  for (const inv of invoicesResult.data ?? []) {
-    accumulateLineItems(Array.isArray(inv.line_items) ? (inv.line_items as CartItem[]) : [], inv.date ?? '')
-  }
-  for (const est of estimatesResult.data ?? []) {
-    accumulateLineItems(Array.isArray(est.line_items) ? (est.line_items as CartItem[]) : [], est.created_at ?? '')
-  }
-  for (const ord of ordersResult.data ?? []) {
-    accumulateLineItems(Array.isArray(ord.line_items) ? (ord.line_items as CartItem[]) : [], ord.created_at ?? '')
   }
 
   // ── 3. No order history → return bestsellers ───────────────────────────────
