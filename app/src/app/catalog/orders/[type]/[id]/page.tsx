@@ -180,8 +180,8 @@ export default function TransactionDetailPage({
 
       {/* Line items */}
       <div style={{ padding: '0 16px' }}>
-        {data.line_items.map((li) => (
-          <LineItemRow key={li.zoho_item_id} item={li} />
+        {data.line_items.map((li, idx) => (
+          <LineItemRow key={`${idx}-${li.zoho_item_id || li.sku || li.item_name}`} item={li} />
         ))}
       </div>
 

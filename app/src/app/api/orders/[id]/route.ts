@@ -4,7 +4,12 @@ import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchCategoryIconMap } from '@/lib/pricing'
 import { getZohoInvoiceLineItems } from '@/lib/zoho'
-import type { TransactionDetail, LineItemDetail } from '@/types/catalog'
+import {
+  mapRawInvoiceLinesToDetails,
+  parseJsonbLineItems,
+  type ItemThumb,
+} from '@/lib/catalog/invoice-line-items'
+import type { TransactionDetail } from '@/types/catalog'
 
 // ── GET /api/orders/[id] — Transaction detail (invoice or sales order) ────────
 // Query param: ?kind=invoice|order (defaults to 'order')
@@ -45,17 +50,7 @@ export async function GET(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    // Webhook-synced invoices use Zoho's field names (item_id, name, item_total).
-    // App-created line items use our canonical names (zoho_item_id, item_name, line_total).
-    // Support both by aliasing, then enrich with image_url from the items table.
-    type RawInvoiceLineItem = {
-      zoho_item_id?: string; item_id?: string
-      item_name?: string; name?: string; sku?: string
-      quantity?: number | ''; rate?: number | ''
-      tax_percentage?: number | ''; line_total?: number; item_total?: number | ''
-    }
-
-    let storedLineItems = Array.isArray(data.line_items) ? data.line_items : []
+    let storedLineItems = parseJsonbLineItems(data.line_items)
 
     // line_items is empty when the row was synced from Zoho's list endpoint (which omits them).
     // Fetch the full detail from Zoho and write back to DB non-blocking so future loads are fast.
@@ -70,14 +65,15 @@ export async function GET(
       }
     }
 
-    const rawLineItems = storedLineItems as RawInvoiceLineItem[]
-
-    const zohoItemIds = rawLineItems
-      .map((li) => li.zoho_item_id || li.item_id)
+    const zohoItemIds = storedLineItems
+      .map((li) => {
+        if (!li || typeof li !== 'object') return ''
+        const r = li as { zoho_item_id?: string; item_id?: string }
+        return r.zoho_item_id || r.item_id || ''
+      })
       .filter(Boolean) as string[]
 
-    type ItemThumb = { image_url: string | null; category_icon_url: string | null }
-    let imageMap = new Map<string, ItemThumb>()
+    const imageMap = new Map<string, ItemThumb>()
     if (zohoItemIds.length > 0) {
       const categoryIconMap = await fetchCategoryIconMap(supabase)
       const { data: itemRows } = await supabase
@@ -95,26 +91,7 @@ export async function GET(
       }
     }
 
-    const lineItems: LineItemDetail[] = rawLineItems.map((li) => {
-      const resolvedId = li.zoho_item_id || li.item_id || ''
-      const qty = Number(li.quantity) || 0
-      const rawRate = Number(li.rate) || 0
-      const lineTotal = Number(li.line_total ?? li.item_total) || 0
-      // Derive rate from line_total when Zoho stores rate as '' (empty string)
-      const rate = rawRate || (qty > 0 ? lineTotal / qty : 0)
-      const thumb = imageMap.get(resolvedId)
-      return {
-        zoho_item_id: resolvedId,
-        item_name: li.item_name || li.name || '',
-        sku: li.sku || '',
-        quantity: qty,
-        rate,
-        tax_percentage: Number(li.tax_percentage) || 0,
-        line_total: lineTotal || (qty * rate),
-        image_url: thumb?.image_url ?? null,
-        category_icon_url: thumb?.category_icon_url ?? null,
-      }
-    })
+    const lineItems = mapRawInvoiceLinesToDetails(storedLineItems, imageMap)
 
     // Derive subtotal/tax_total from line_items when DB columns are 0 (Zoho list-synced rows)
     const computedSubtotal = lineItems.reduce((s, li) => s + li.line_total, 0)

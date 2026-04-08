@@ -7,6 +7,11 @@ import type { EnquiryListItem } from '@/types/catalog'
 // ── GET /api/enquiries — Paginated customer estimates list ────────────────────
 
 const LIST_LIMIT = 20
+const LIST_WINDOW_DAYS = 30
+
+function estimatesListCutoffIso(): string {
+  return new Date(Date.now() - LIST_WINDOW_DAYS * 86400000).toISOString()
+}
 
 export async function GET(request: NextRequest) {
   let session
@@ -23,6 +28,7 @@ export async function GET(request: NextRequest) {
   const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
 
   const supabase = createServiceClient()
+  const cutoffIso = estimatesListCutoffIso()
 
   // Fetch LIST_LIMIT + 1 rows to determine has_more without an extra count query.
   // .range(from, to) is inclusive on both ends, so range(0, 20) = 21 rows.
@@ -30,6 +36,7 @@ export async function GET(request: NextRequest) {
     .from('estimates')
     .select('public_id, estimate_number, date, created_at, total, line_items, status')
     .eq('zoho_contact_id', session.zoho_contact_id)
+    .gte('created_at', cutoffIso)
     .order('created_at', { ascending: false })
     .range(offset, offset + LIST_LIMIT) // inclusive → LIST_LIMIT+1 rows max
 

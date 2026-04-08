@@ -189,12 +189,16 @@ export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<un
       console.warn(`[zoho] getZohoInvoiceLineItems: HTTP ${res.status} for invoice ${zohoInvoiceId}`)
       return null
     }
-    const data = await res.json()
-    if (!Array.isArray(data.invoice?.line_items)) {
-      console.warn(`[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${data.code}, message=${data.message}`)
+    const data = (await res.json()) as Record<string, unknown>
+    const invoice = (data.invoice ?? data) as Record<string, unknown> | undefined
+    const lineItems = invoice?.line_items
+    if (!Array.isArray(lineItems)) {
+      console.warn(
+        `[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${String(data.code)}, message=${String(data.message)}`
+      )
       return null
     }
-    return data.invoice.line_items
+    return lineItems
   } catch (err) {
     console.warn(`[zoho] getZohoInvoiceLineItems: exception for ${zohoInvoiceId}:`, err)
     return null

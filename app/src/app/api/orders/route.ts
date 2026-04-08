@@ -1,4 +1,6 @@
 import { NextResponse, after } from 'next/server'
+import { getZohoInvoiceLineItems } from '@/lib/zoho'
+import { parseJsonbLineItems, sumInvoiceLineItemQuantities } from '@/lib/catalog/invoice-line-items'
 import type { NextRequest } from 'next/server'
 // PHASE2_SO_ARCHIVE: import { createHash } from 'crypto'
 import { requireSession, AuthError } from '@/lib/auth'
@@ -226,9 +228,16 @@ export async function POST(request: NextRequest) {
 }
 PHASE2_SO_ARCHIVE_END */
 
-// ── GET /api/orders — Unified paginated transaction list ─────────────────────
+// ── GET /api/orders — Paginated invoices (last N days, catalog UI) ────────────
 
 const LIST_LIMIT = 20
+const LIST_WINDOW_DAYS = 30
+
+function invoiceListCutoffs(): { ymd: string; iso: string } {
+  const d = new Date()
+  d.setTime(d.getTime() - LIST_WINDOW_DAYS * 86400000)
+  return { ymd: d.toISOString().slice(0, 10), iso: d.toISOString() }
+}
 
 export async function GET(request: NextRequest) {
   let session
@@ -245,103 +254,65 @@ export async function GET(request: NextRequest) {
   const offset = Math.max(0, parseInt(searchParams.get('offset') ?? '0', 10))
 
   const supabase = createServiceClient()
+  const { ymd: cutoffYmd, iso: cutoffIso } = invoiceListCutoffs()
 
-  // Fetch all invoices for this contact (no pagination — merge happens in memory)
-  const { data: invoices, error: invErr } = await supabase
+  // Paginate in the DB. Include undated rows only when recently synced.
+  const { data: rows, error: invErr } = await supabase
     .from('invoices')
-    .select('zoho_invoice_id, invoice_number, date, total, line_items, estimate_number')
+    .select('zoho_invoice_id, invoice_number, date, created_at, total, line_items, estimate_number')
     .eq('zoho_contact_id', session.zoho_contact_id)
-    .order('date', { ascending: false })
+    .or(`date.gte.${cutoffYmd},and(date.is.null,created_at.gte."${cutoffIso}")`)
+    .order('date', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + LIST_LIMIT)
 
   if (invErr) {
     console.error('[orders] invoice fetch error:', invErr)
     return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
   }
 
-  // Fetch all sales orders with their linked estimate number
-  const { data: orders, error: ordErr } = await supabase
-    .from('sales_orders')
-    .select(`
-      public_id,
-      salesorder_number,
-      date,
-      created_at,
-      total,
-      line_items,
-      converted_from_estimate_id,
-      estimates!converted_from_estimate_id ( estimate_number )
-    `)
-    .eq('zoho_contact_id', session.zoho_contact_id)
-    .order('created_at', { ascending: false })
+  const batch = rows ?? []
+  const has_more = batch.length > LIST_LIMIT
+  const page = batch.slice(0, LIST_LIMIT)
 
-  if (ordErr) {
-    console.error('[orders] orders fetch error:', ordErr)
-    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 })
+  // Incremental Zoho sync omits line_items; hydrate a small page so cards show counts
+  // and the detail screen has data without an extra round-trip.
+  const hydrated = new Map<string, unknown[]>()
+  const needHydration = page.filter((inv) => parseJsonbLineItems(inv.line_items).length === 0)
+  const hydrateConcurrency = 5
+  for (let i = 0; i < needHydration.length; i += hydrateConcurrency) {
+    const slice = needHydration.slice(i, i + hydrateConcurrency)
+    await Promise.all(
+      slice.map(async (inv) => {
+        const zohoRows = await getZohoInvoiceLineItems(inv.zoho_invoice_id)
+        if (zohoRows && zohoRows.length > 0) {
+          hydrated.set(inv.zoho_invoice_id, zohoRows)
+          const rowsToStore = zohoRows
+          const id = inv.zoho_invoice_id
+          after(async () => {
+            const sb = createServiceClient()
+            await sb.from('invoices').update({ line_items: rowsToStore }).eq('zoho_invoice_id', id)
+          })
+        }
+      })
+    )
   }
 
-  // Build set of estimate_numbers that are covered by an invoice.
-  // Only add non-empty estimate_number values so null/empty rows don't suppress orders.
-  const coveredByInvoice = new Set<string>()
-  for (const inv of invoices ?? []) {
-    if (inv.estimate_number && inv.estimate_number.trim() !== '') {
-      coveredByInvoice.add(inv.estimate_number)
-    }
-  }
-
-  type TxRow = {
-    kind: 'invoice' | 'order'
-    id: string
-    doc_number: string
-    date: string
-    total: number
-    item_count: number
-    status_label: 'Invoiced' | 'Ordered'
-  }
-
-  const unified: TxRow[] = []
-
-  for (const inv of invoices ?? []) {
-    const items = Array.isArray(inv.line_items) ? inv.line_items as CartItem[] : []
-    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
-    unified.push({
-      kind: 'invoice',
+  const items = page.map((inv) => {
+    const lines = hydrated.get(inv.zoho_invoice_id) ?? parseJsonbLineItems(inv.line_items)
+    return {
+      kind: 'invoice' as const,
       id: inv.zoho_invoice_id,
       doc_number: inv.invoice_number,
-      date: inv.date ?? '',
+      date: inv.date ?? (inv.created_at ? inv.created_at.slice(0, 10) : ''),
       total: inv.total,
-      item_count: qtySum || items.length,
-      status_label: 'Invoiced',
-    })
-  }
-
-  for (const ord of orders ?? []) {
-    const rawEst = ord.estimates as unknown
-    const estimateNumber =
-      (Array.isArray(rawEst) ? rawEst[0] : rawEst)?.estimate_number ?? null
-    // Skip order if a non-empty invoice already covers it via the estimate chain
-    if (estimateNumber && coveredByInvoice.has(estimateNumber)) continue
-
-    const items = Array.isArray(ord.line_items) ? ord.line_items as CartItem[] : []
-    const qtySum = items.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
-    unified.push({
-      kind: 'order',
-      id: ord.public_id as string,
-      doc_number: ord.salesorder_number,
-      date: ord.date ?? (ord.created_at ? ord.created_at.slice(0, 10) : ''),
-      total: ord.total,
-      item_count: qtySum || items.length,
-      status_label: 'Ordered',
-    })
-  }
-
-  // Sort unified list by date descending
-  unified.sort((a, b) => b.date.localeCompare(a.date))
-
-  const page = unified.slice(offset, offset + LIST_LIMIT)
-  const has_more = offset + LIST_LIMIT < unified.length
+      item_count: sumInvoiceLineItemQuantities(lines),
+      status_label: 'Invoiced' as const,
+    }
+  })
 
   return NextResponse.json({
-    items: page,
+    items,
     has_more,
     next_offset: offset + LIST_LIMIT,
   })
