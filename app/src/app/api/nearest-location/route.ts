@@ -33,6 +33,10 @@ export async function GET(request: NextRequest) {
     .not('latitude', 'is', null)
     .not('longitude', 'is', null)
     .eq('status', 'active')
+  if (dormant.length > 0) {
+    locQuery = locQuery.not('zoho_location_id', 'in', dormant)
+  }
+  const { data: locs } = await locQuery
 
   if (locError) {
     console.error('[nearest-location] Supabase locations query failed:', locError.message)
