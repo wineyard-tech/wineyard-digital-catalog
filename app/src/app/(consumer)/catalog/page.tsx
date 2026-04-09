@@ -30,7 +30,7 @@ export default async function CatalogPage({
   const [{ data: rawCategories }, { data: itemRows }] = await Promise.all([
     supabase
       .from('categories' as never)
-      .select('zoho_category_id, category_name, display_order, icon_url')
+      .select('zoho_category_id, category_name, display_order, icon_url, icon_urls')
       .eq('status', 'active')
       .order('display_order', { ascending: true })
       .order('category_name', { ascending: true }),
