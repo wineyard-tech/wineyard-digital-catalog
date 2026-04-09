@@ -3,6 +3,11 @@ import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchCategoryIconMap } from '@/lib/pricing'
+import {
+  normalizeItemImageUrls,
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+} from '@/lib/catalog/product-image-urls'
 import { getZohoEstimateLineItems } from '@/lib/zoho'
 import type { EnquiryDetail, EnquiryLineItemDetail } from '@/types/catalog'
 
@@ -68,6 +73,8 @@ export async function GET(
 
   type StockRow = {
     available_stock: number | null
+    image_urls: string[] | null
+    category_icon_urls: string[] | null
     image_url: string | null
     category_icon_url: string | null
     item_name: string | null
@@ -83,15 +90,18 @@ export async function GET(
       .in('zoho_item_id', zohoItemIds)
 
     for (const row of itemRows ?? []) {
-      const imageUrl = Array.isArray(row.image_urls) && row.image_urls.length > 0
-        ? (row.image_urls[0] as string)
-        : null
+      const image_urls = normalizeItemImageUrls(row.image_urls)
       const cn = (row.category_name as string | null) ?? null
+      const category_icon_urls = cn ? categoryIconMap[cn] ?? null : null
+      const image_url =
+        pickProductImageVariant(image_urls, category_icon_urls, PRODUCT_IMAGE_W400) ?? null
       const category_icon_url =
-        cn && categoryIconMap[cn] ? categoryIconMap[cn] : null
+        pickProductImageVariant(null, category_icon_urls, PRODUCT_IMAGE_W400) ?? null
       stockMap.set(row.zoho_item_id, {
         available_stock: row.available_stock ?? null,
-        image_url: imageUrl,
+        image_urls,
+        category_icon_urls,
+        image_url,
         category_icon_url,
         item_name: row.item_name ?? null,
         sku: row.sku ?? null,
@@ -125,6 +135,8 @@ export async function GET(
       rate,
       tax_percentage: Number(li.tax_percentage) || 0,
       line_total: lineTotal || (qty * rate),
+      image_urls: stock?.image_urls ?? null,
+      category_icon_urls: stock?.category_icon_urls ?? null,
       image_url: stock?.image_url ?? null,
       category_icon_url: stock?.category_icon_url ?? null,
       available_stock,

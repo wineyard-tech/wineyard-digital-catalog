@@ -1,7 +1,11 @@
 'use client'
 
 import { useRouter, usePathname } from 'next/navigation'
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+  resolveProductThumbnailUrl,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from './CartContext'
 
 const THUMB_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -53,7 +57,12 @@ export default function CartBar({ bottom = 76 }: CartBarProps) {
         {thumbnails.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center' }}>
             {thumbnails.map((item, idx) => {
-              const thumb = resolveProductThumbnailUrl(item.image_url, item.category_icon_url)
+              const thumb =
+                pickProductImageVariant(
+                  item.image_urls ?? null,
+                  item.category_icon_urls ?? null,
+                  PRODUCT_IMAGE_W400
+                ) ?? resolveProductThumbnailUrl(item.image_url, item.category_icon_url)
               return (
               <div
                 key={item.zoho_item_id}

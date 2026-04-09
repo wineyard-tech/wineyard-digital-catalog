@@ -1,4 +1,5 @@
 import type { LineItemDetail } from '@/types/catalog'
+import { pickProductImageVariant, PRODUCT_IMAGE_W400 } from '@/lib/catalog/product-image-urls'
 
 /** Normalize JSONB / API payloads to a line-item array. */
 export function parseJsonbLineItems(value: unknown): unknown[] {
@@ -42,8 +43,8 @@ export function sumInvoiceLineItemQuantities(lineItemsJson: unknown): number {
 }
 
 export interface ItemThumb {
-  image_url: string | null
-  category_icon_url: string | null
+  image_urls: string[] | null
+  category_icon_urls: string[] | null
 }
 
 type RawInvoiceLineItem = {
@@ -80,6 +81,10 @@ export function mapRawInvoiceLinesToDetails(
     const lineTotal = Number.isFinite(lineTotalNum) ? lineTotalNum : 0
     const derivedRate = rate > 0 ? rate : qty > 0 ? lineTotal / qty : 0
     const thumb = resolvedId ? imageMap.get(resolvedId) : undefined
+    const image_urls = thumb?.image_urls ?? null
+    const category_icon_urls = thumb?.category_icon_urls ?? null
+    const image_url =
+      pickProductImageVariant(image_urls, category_icon_urls, PRODUCT_IMAGE_W400) ?? null
     return {
       zoho_item_id: resolvedId,
       item_name: String(li.item_name || li.name || li.description || 'Item'),
@@ -88,8 +93,11 @@ export function mapRawInvoiceLinesToDetails(
       rate: derivedRate,
       tax_percentage: Number(li.tax_percentage) || 0,
       line_total: lineTotal > 0 ? lineTotal : qty * derivedRate,
-      image_url: thumb?.image_url ?? null,
-      category_icon_url: thumb?.category_icon_url ?? null,
+      image_urls,
+      category_icon_urls,
+      image_url,
+      category_icon_url:
+        pickProductImageVariant(null, category_icon_urls, PRODUCT_IMAGE_W400) ?? null,
     }
   })
 }

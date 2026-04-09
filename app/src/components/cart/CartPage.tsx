@@ -14,7 +14,11 @@ import {
   readWlEnquiryFieldsFromDocumentCookie,
 } from '@/lib/catalog/read-wl-enquiry-fields'
 import { getWlHeaderLabelFromParsed } from '@/lib/catalog/wl-cookie-header-label'
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+  resolveProductThumbnailUrl,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -372,7 +376,13 @@ export default function CartPage() {
             >
               <div style={{ width: 56, height: 56, borderRadius: 6, overflow: 'hidden', background: '#F9FAFB', flexShrink: 0, position: 'relative' }}>
                 <Image
-                  src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER}
+                  src={
+                    pickProductImageVariant(
+                      item.image_urls ?? null,
+                      item.category_icon_urls ?? null,
+                      PRODUCT_IMAGE_W400
+                    ) ?? resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER
+                  }
                   alt={item.item_name}
                   fill
                   style={{ objectFit: 'cover' }}

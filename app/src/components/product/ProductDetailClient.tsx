@@ -6,7 +6,10 @@ import Image from 'next/image'
 import { ArrowLeft, Search, Plus, Minus, X } from 'lucide-react'
 import { usePostHog } from 'posthog-js/react'
 import type { CatalogItem } from '@/types/catalog'
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W1200,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from '../cart/CartContext'
 import CartBar from '../cart/CartBar'
 import ProductCard from '../catalog/ProductCard'
@@ -41,8 +44,11 @@ export default function ProductDetailClient({ id }: Props) {
   const qty = cartEntry?.quantity ?? 0
   const hasDiscount = item ? item.price_type === 'custom' && item.base_rate > item.final_price : false
   const imgSrc = item
-    ? resolveProductThumbnailUrl(!imgError ? item.image_url : null, item.category_icon_url) ??
-      PLACEHOLDER
+    ? pickProductImageVariant(
+        imgError ? null : item.image_urls,
+        item.category_icon_urls,
+        PRODUCT_IMAGE_W1200
+      ) ?? PLACEHOLDER
     : PLACEHOLDER
 
   useEffect(() => {
@@ -128,6 +134,8 @@ export default function ProductDetailClient({ id }: Props) {
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
+      image_urls: item.image_urls ?? null,
+      category_icon_urls: item.category_icon_urls ?? null,
       image_url: item.image_url ?? null,
       category_icon_url: item.category_icon_url ?? null,
     })
@@ -259,7 +267,7 @@ export default function ProductDetailClient({ id }: Props) {
             fill
             style={{ objectFit: 'contain', padding: 8 }}
             onError={() => setImgError(true)}
-            unoptimized={!item.image_url || imgError}
+            unoptimized
             sizes="(max-width: 640px) 100vw, 480px"
             priority
           />
@@ -330,7 +338,7 @@ export default function ProductDetailClient({ id }: Props) {
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px 4px', scrollbarWidth: 'none' }}>
               {fbtItems.map((related) => (
                 <div key={related.zoho_item_id} style={{ flexShrink: 0, width: 160 }}>
-                  <ProductCard item={related} />
+                  <ProductCard item={related} imageVariant="recommendation" />
                 </div>
               ))}
             </div>
@@ -346,7 +354,7 @@ export default function ProductDetailClient({ id }: Props) {
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', padding: '0 16px 4px', scrollbarWidth: 'none' }}>
               {moreCategoryItems.map((related) => (
                 <div key={related.zoho_item_id} style={{ flexShrink: 0, width: 160 }}>
-                  <ProductCard item={related} />
+                  <ProductCard item={related} imageVariant="recommendation" />
                 </div>
               ))}
             </div>

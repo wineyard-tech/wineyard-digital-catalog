@@ -1,7 +1,15 @@
 /**
- * Prefer product image (first of `image_urls` on the server, exposed as `image_url`);
- * when missing or empty, use the category's `icon_url` (APIs expose as `category_icon_url`).
+ * Prefer product image slots when present; else category icon slots.
+ * Legacy string-only helper for code paths that only have single URLs.
  */
+export {
+  pickProductImageVariant,
+  itemHasProductImage,
+  PRODUCT_IMAGE_W400,
+  PRODUCT_IMAGE_W800,
+  PRODUCT_IMAGE_W1200,
+} from '@/lib/catalog/product-image-urls'
+
 export function resolveProductThumbnailUrl(
   imageUrl: string | null | undefined,
   categoryIconUrl: string | null | undefined

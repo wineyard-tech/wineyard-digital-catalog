@@ -3,6 +3,8 @@ import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { getSession } from '@/lib/auth'
 import type { CatalogItem } from '@/types/catalog'
+import { buildCatalogItem } from '@/lib/pricing'
+import { normalizeCategoryIconUrls } from '@/lib/catalog/product-image-urls'
 
 interface RouteParams { params: Promise<{ id: string }> }
 
@@ -14,7 +16,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: cat } = await (supabase as any)
     .from('categories')
-    .select('category_name, icon_url')
+    .select('category_name, icon_url, icon_urls')
     .eq('zoho_category_id', id)
     .single()
 
@@ -81,41 +83,21 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     }
   }
 
-  // Build a single-entry icon map for this category
-  const categoryIconMap: Record<string, string> = cat.icon_url
-    ? { [cat.category_name]: cat.icon_url }
+  const categoryIconUrls = normalizeCategoryIconUrls(cat.icon_urls, cat.icon_url)
+  const categoryIconMap: Record<string, string[]> = categoryIconUrls
+    ? { [cat.category_name]: categoryIconUrls }
     : {}
 
   // ── Shape CatalogItem[] with popularity attached ──────────────────────────
-  const items = (rows as Record<string, unknown>[]).map((row) => {
-    const baseRate = Number(row.base_rate ?? 0)
-    const customRate = pricebookRates[row.zoho_item_id as string]
-    const finalPrice = customRate ?? baseRate
-    const stock = Number(row.available_stock ?? 0)
-    let imageUrl: string | null = null
-    if (Array.isArray(row.image_urls) && row.image_urls.length > 0) {
-      imageUrl = row.image_urls[0] as string
+  const items: (CatalogItem & { order_count_30d: number })[] = (rows as Record<string, unknown>[]).map(
+    (row) => {
+      const base = buildCatalogItem(row, pricebookRates, categoryIconMap)
+      return {
+        ...base,
+        order_count_30d: popMap.get(row.zoho_item_id as string) ?? 0,
+      }
     }
-    const categoryName = (row.category_name as string | null) ?? null
-
-    const item: CatalogItem & { order_count_30d: number } = {
-      zoho_item_id: row.zoho_item_id as string,
-      item_name: row.item_name as string,
-      sku: row.sku as string,
-      brand: (row.brand as string | null) ?? null,
-      category_name: categoryName,
-      base_rate: baseRate,
-      final_price: finalPrice,
-      available_stock: stock,
-      stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-      image_url: imageUrl,
-      category_icon_url: (categoryName && categoryIconMap[categoryName]) ? categoryIconMap[categoryName] : null,
-      tax_percentage: 18,
-      price_type: customRate != null ? 'custom' : 'base',
-      order_count_30d: popMap.get(row.zoho_item_id as string) ?? 0,
-    }
-    return item
-  })
+  )
 
   // Sort by 30-day order count descending (most popular first)
   items.sort((a, b) => b.order_count_30d - a.order_count_30d)

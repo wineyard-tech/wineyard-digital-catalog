@@ -11,7 +11,13 @@ export interface CatalogItem {
   price_type: 'custom' | 'base';
   available_stock: number;
   stock_status: 'available' | 'limited' | 'out_of_stock';
+  /** Ordered [400w, 800w, 1200w] public URLs from `items.image_urls`. */
+  image_urls: string[] | null;
+  /** Ordered [400w, 800w, 1200w] from `categories.icon_urls` (legacy: derived from `icon_url`). */
+  category_icon_urls: string[] | null;
+  /** Largest product image URL (800w slot); legacy consumers. */
   image_url: string | null;
+  /** Largest category icon URL; legacy consumers. */
   category_icon_url?: string | null;
   tax_percentage: 18;           // Hardcoded Phase 1
 }
@@ -24,8 +30,9 @@ export interface CartItem {
   rate: number;
   tax_percentage: 18;
   line_total: number;
+  image_urls?: string[] | null;
+  category_icon_urls?: string[] | null;
   image_url?: string | null;
-  /** categories.icon_url — used when product has no image_urls */
   category_icon_url?: string | null;
 }
 
@@ -121,8 +128,9 @@ export interface LineItemDetail {
   rate: number;
   tax_percentage: number;
   line_total: number;
+  image_urls?: string[] | null;
+  category_icon_urls?: string[] | null;
   image_url: string | null;
-  /** categories.icon_url when product image is missing */
   category_icon_url?: string | null;
 }
 

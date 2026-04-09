@@ -127,6 +127,7 @@ export type Database = {
           created_at: string | null
           display_order: number | null
           icon_url: string | null
+          icon_urls: Json | null
           parent_category_id: string | null
           status: string | null
           updated_at: string | null
@@ -137,6 +138,7 @@ export type Database = {
           created_at?: string | null
           display_order?: number | null
           icon_url?: string | null
+          icon_urls?: Json | null
           parent_category_id?: string | null
           status?: string | null
           updated_at?: string | null
@@ -147,6 +149,7 @@ export type Database = {
           created_at?: string | null
           display_order?: number | null
           icon_url?: string | null
+          icon_urls?: Json | null
           parent_category_id?: string | null
           status?: string | null
           updated_at?: string | null
