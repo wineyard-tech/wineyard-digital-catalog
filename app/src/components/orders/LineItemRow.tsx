@@ -1,6 +1,10 @@
 'use client'
 
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+  resolveProductThumbnailUrl,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from '../cart/CartContext'
 
 export interface LineItem {
@@ -11,6 +15,8 @@ export interface LineItem {
   rate: number
   tax_percentage: number
   line_total: number
+  image_urls?: string[] | null
+  category_icon_urls?: string[] | null
   image_url?: string | null
   category_icon_url?: string | null
   stock_status?: 'available' | 'limited' | 'out_of_stock' | 'unknown'
@@ -39,6 +45,8 @@ export function LineItemRow({ item, showAddToCart = true }: { item: LineItem; sh
       rate: item.rate,
       tax_percentage: 18,
       line_total: item.rate,
+      image_urls: item.image_urls ?? null,
+      category_icon_urls: item.category_icon_urls ?? null,
       image_url: item.image_url ?? null,
       category_icon_url: item.category_icon_url ?? null,
     })
@@ -48,7 +56,13 @@ export function LineItemRow({ item, showAddToCart = true }: { item: LineItem; sh
     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0', borderBottom: '1px solid #F3F4F6' }}>
       {/* Product image */}
       <img
-        src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER}
+        src={
+          pickProductImageVariant(
+            item.image_urls ?? null,
+            item.category_icon_urls ?? null,
+            PRODUCT_IMAGE_W400
+          ) ?? resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? PLACEHOLDER
+        }
         alt={item.item_name}
         onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER }}
         style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, flexShrink: 0, background: '#F9FAFB' }}

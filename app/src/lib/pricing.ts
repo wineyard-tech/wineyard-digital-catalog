@@ -1,5 +1,11 @@
 import { createServiceClient } from './supabase/server'
 import type { CatalogItem } from '@/types/catalog'
+import {
+  normalizeItemImageUrls,
+  normalizeCategoryIconUrls,
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W1200,
+} from '@/lib/catalog/product-image-urls'
 
 export interface CatalogFilters {
   category?: string
@@ -117,12 +123,12 @@ export async function resolvePricebookRatesForItemIds(
 /**
  * Shapes a raw items row into a CatalogItem, applying pricebook rates where available.
  * Falls back to base_rate when the pricebook has no entry for this item.
- * categoryIconMap: category_name → icon_url, used as fallback when item has no image.
+ * categoryIconMap: category_name → ordered [400w,800w,1200w] URLs.
  */
 export function buildCatalogItem(
   row: Record<string, unknown>,
   pricebookRates: Record<string, number>,
-  categoryIconMap: Record<string, string> = {}
+  categoryIconMap: Record<string, string[]> = {}
 ): CatalogItem {
   const baseRate = Number(row.base_rate ?? 0)
   const customRate = pricebookRates[row.zoho_item_id as string]
@@ -130,10 +136,8 @@ export function buildCatalogItem(
   const stock = Number(row.available_stock ?? 0)
   const categoryName = (row.category_name as string | null) ?? null
 
-  let imageUrl: string | null = null
-  if (Array.isArray(row.image_urls) && row.image_urls.length > 0) {
-    imageUrl = row.image_urls[0] as string
-  }
+  const image_urls = normalizeItemImageUrls(row.image_urls)
+  const category_icon_urls = categoryName ? categoryIconMap[categoryName] ?? null : null
 
   return {
     zoho_item_id: row.zoho_item_id as string,
@@ -145,28 +149,33 @@ export function buildCatalogItem(
     final_price: finalPrice,
     available_stock: stock,
     stock_status: stock > 10 ? 'available' : stock > 0 ? 'limited' : 'out_of_stock',
-    image_url: imageUrl,
-    category_icon_url: (categoryName && categoryIconMap[categoryName]) ? categoryIconMap[categoryName] : null,
+    image_urls,
+    category_icon_urls,
+    image_url: pickProductImageVariant(image_urls, null, PRODUCT_IMAGE_W1200),
+    category_icon_url: category_icon_urls
+      ? pickProductImageVariant(null, category_icon_urls, PRODUCT_IMAGE_W1200)
+      : null,
     tax_percentage: 18,
     price_type: customRate != null ? 'custom' : 'base',
   }
 }
 
 /**
- * Fetches category_name → icon_url map for all categories.
+ * Fetches category_name → ordered icon URL array for all categories.
  * Categories table is tiny (<30 rows) so fetching all is cheaper than per-item joins.
  */
-export async function fetchCategoryIconMap(supabase: ServiceClient): Promise<Record<string, string>> {
+export async function fetchCategoryIconMap(supabase: ServiceClient): Promise<Record<string, string[]>> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = await (supabase as any)
     .from('categories')
-    .select('category_name, icon_url')
+    .select('category_name, icon_url, icon_urls')
   if (!data) return {}
-  return Object.fromEntries(
-    (data as { category_name: string; icon_url: string | null }[])
-      .filter(r => r.icon_url)
-      .map(r => [r.category_name, r.icon_url!])
-  )
+  const out: Record<string, string[]> = {}
+  for (const r of data as { category_name: string; icon_url: string | null; icon_urls: unknown }[]) {
+    const urls = normalizeCategoryIconUrls(r.icon_urls, r.icon_url)
+    if (urls) out[r.category_name] = urls
+  }
+  return out
 }
 
 /**

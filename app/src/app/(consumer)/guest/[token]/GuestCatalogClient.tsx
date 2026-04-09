@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CatalogItem } from '@/types/catalog'
-import SearchBar from '../../../components/catalog/SearchBar'
-import CategoryFilter from '../../../components/catalog/CategoryFilter'
-import BrandFilter from '../../../components/catalog/BrandFilter'
-import ProductGrid from '../../../components/catalog/ProductGrid'
-import OfflineBanner from '../../../components/shared/OfflineBanner'
+import SearchBar from '@/components/catalog/SearchBar'
+import CategoryFilter from '@/components/catalog/CategoryFilter'
+import BrandFilter from '@/components/catalog/BrandFilter'
+import ProductGrid from '@/components/catalog/ProductGrid'
+import OfflineBanner from '@/components/shared/OfflineBanner'
 
 interface GuestCatalogClientProps {
   initialItems: CatalogItem[]

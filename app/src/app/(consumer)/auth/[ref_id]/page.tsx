@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import Image from 'next/image'
 import { validateWhatsAppAuthRef } from '@/lib/auth/server-lookups'
-import OtpForm from '../../../components/auth/OtpForm'
+import OtpForm from '@/components/auth/OtpForm'
 
 interface AuthPageProps {
   params: Promise<{ ref_id: string }>

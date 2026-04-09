@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import { requireSession, AuthError } from '@/lib/auth'
 import { createServiceClient } from '@/lib/supabase/server'
 import { fetchCategoryIconMap } from '@/lib/pricing'
+import { normalizeItemImageUrls } from '@/lib/catalog/product-image-urls'
 import { getZohoInvoiceLineItems } from '@/lib/zoho'
 import {
   mapRawInvoiceLinesToDetails,
@@ -81,13 +82,10 @@ export async function GET(
         .select('zoho_item_id, image_urls, category_name')
         .in('zoho_item_id', zohoItemIds)
       for (const row of itemRows ?? []) {
-        const url = Array.isArray(row.image_urls) && row.image_urls.length > 0
-          ? (row.image_urls[0] as string)
-          : null
+        const image_urls = normalizeItemImageUrls(row.image_urls)
         const cn = (row.category_name as string | null) ?? null
-        const category_icon_url =
-          cn && categoryIconMap[cn] ? categoryIconMap[cn] : null
-        imageMap.set(row.zoho_item_id, { image_url: url, category_icon_url })
+        const category_icon_urls = cn ? categoryIconMap[cn] ?? null : null
+        imageMap.set(row.zoho_item_id, { image_urls, category_icon_urls })
       }
     }
 

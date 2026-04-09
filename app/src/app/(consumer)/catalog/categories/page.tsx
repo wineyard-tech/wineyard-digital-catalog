@@ -17,8 +17,8 @@ import {
   Sun, Wrench, Wifi, Package, Box, Router, BatteryCharging,
   type LucideIcon,
 } from 'lucide-react'
-import { useScrollDirection } from '../../../hooks/useScrollDirection'
-import SearchBar from '../../../components/catalog/SearchBar'
+import { useScrollDirection } from '@/hooks/useScrollDirection'
+import SearchBar from '@/components/catalog/SearchBar'
 
 interface Category {
   zoho_category_id: string

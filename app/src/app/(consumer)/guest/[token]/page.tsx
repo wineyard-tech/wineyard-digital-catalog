@@ -3,7 +3,7 @@ import {
   validateGuestSessionToken,
   incrementGuestPageViewsFireAndForget,
 } from '@/lib/auth/server-lookups'
-import GuestBanner from '../../../components/auth/GuestBanner'
+import GuestBanner from '@/components/auth/GuestBanner'
 import GuestCatalogClient from './GuestCatalogClient'
 
 interface GuestPageProps {

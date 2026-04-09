@@ -6,13 +6,22 @@ import { useRouter } from 'next/navigation'
 import { Plus, Minus } from 'lucide-react'
 import posthog from 'posthog-js'
 import type { CatalogItem } from '@/types/catalog'
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W800,
+  PRODUCT_IMAGE_W1200,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 import { useCart } from '../cart/CartContext'
+
+/** `catalog` = 1200w (grids, search, PDP hero in card form). `recommendation` = 800w (strip carousels on PDP / cart). */
+export type ProductCardImageVariant = 'catalog' | 'recommendation'
 
 interface ProductCardProps {
   item: CatalogItem
   guestMode?: boolean
   disableNavigation?: boolean
+  /** Defaults to `catalog` (1200w). */
+  imageVariant?: ProductCardImageVariant
 }
 
 const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -23,16 +32,25 @@ function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
 }
 
-export default function ProductCard({ item, guestMode = false, disableNavigation = false }: ProductCardProps) {
+export default function ProductCard({
+  item,
+  guestMode = false,
+  disableNavigation = false,
+  imageVariant = 'catalog',
+}: ProductCardProps) {
   const { items, addItem, updateQty } = useCart()
   const [imgError, setImgError] = useState(false)
   const router = useRouter()
 
   const cartEntry = items.find((i) => i.zoho_item_id === item.zoho_item_id)
   const qty = cartEntry?.quantity ?? 0
+  const slot = imageVariant === 'recommendation' ? PRODUCT_IMAGE_W800 : PRODUCT_IMAGE_W1200
   const imgSrc =
-    resolveProductThumbnailUrl(!imgError ? item.image_url : null, item.category_icon_url) ??
-    PLACEHOLDER
+    pickProductImageVariant(
+      imgError ? null : item.image_urls,
+      item.category_icon_urls,
+      slot
+    ) ?? PLACEHOLDER
   const hasDiscount = item.price_type === 'custom' && item.base_rate > item.final_price
 
   function handleAdd(e: React.MouseEvent) {
@@ -46,6 +64,8 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
       rate: item.final_price,
       tax_percentage: 18,
       line_total: item.final_price,
+      image_urls: item.image_urls ?? null,
+      category_icon_urls: item.category_icon_urls ?? null,
       image_url: item.image_url ?? null,
       category_icon_url: item.category_icon_url ?? null,
     })
@@ -95,8 +115,8 @@ export default function ProductCard({ item, guestMode = false, disableNavigation
           fill
           style={{ objectFit: 'contain', padding: 8 }}
           onError={() => setImgError(true)}
-          sizes="(max-width: 640px) 160px, 220px"
-          unoptimized={!item.image_url || imgError}
+          sizes="(max-width: 640px) 50vw, 280px"
+          unoptimized
         />
 
         {/* Cart controls — bottom-right inside image */}

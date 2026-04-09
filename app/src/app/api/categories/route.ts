@@ -7,7 +7,7 @@ export async function GET() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data, error } = await (supabase as any)
     .from('categories')
-    .select('zoho_category_id, category_name, display_order, icon_url')
+    .select('zoho_category_id, category_name, display_order, icon_url, icon_urls')
     .eq('status', 'active')
     .order('display_order', { ascending: true })
     .order('category_name', { ascending: true })

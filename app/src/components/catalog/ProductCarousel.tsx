@@ -2,13 +2,15 @@
 
 import { useRouter } from 'next/navigation'
 import type { CatalogItem } from '@/types/catalog'
-import ProductCard from './ProductCard'
+import ProductCard, { type ProductCardImageVariant } from './ProductCard'
 
 interface ProductCarouselProps {
   title: string
   items: CatalogItem[]
   loading?: boolean
   seeAllHref?: string
+  /** Horizontal strips on PDP/cart use `recommendation` (800w); catalog home strips use `catalog` (1200w). */
+  cardImageVariant?: ProductCardImageVariant
 }
 
 function CarouselSkeleton({ title }: { title?: string }) {
@@ -47,7 +49,13 @@ function CarouselSkeleton({ title }: { title?: string }) {
   )
 }
 
-export default function ProductCarousel({ title, items, loading = false, seeAllHref }: ProductCarouselProps) {
+export default function ProductCarousel({
+  title,
+  items,
+  loading = false,
+  seeAllHref,
+  cardImageVariant = 'catalog',
+}: ProductCarouselProps) {
   const router = useRouter()
 
   if (loading) return <CarouselSkeleton title={title || undefined} />
@@ -99,7 +107,7 @@ export default function ProductCarousel({ title, items, loading = false, seeAllH
       >
         {items.map(item => (
           <div key={item.zoho_item_id} style={{ flexShrink: 0, width: 156 }}>
-            <ProductCard item={item} />
+            <ProductCard item={item} imageVariant={cardImageVariant} />
           </div>
         ))}
       </div>

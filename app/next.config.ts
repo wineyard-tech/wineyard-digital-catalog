@@ -68,6 +68,8 @@ const nextConfig: NextConfig = {
     ]
   },
   images: {
+    /** Bypass Vercel Image Optimization (presized WebP in Supabase + quota limits). */
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',

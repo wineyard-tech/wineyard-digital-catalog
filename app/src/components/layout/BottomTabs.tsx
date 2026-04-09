@@ -2,7 +2,8 @@
 
 import { usePathname, useRouter } from 'next/navigation'
 import { Home, RefreshCw, ClipboardList } from 'lucide-react'
-import { useScrollDirection } from '../../hooks/useScrollDirection'
+import { useScrollDirection } from '@/hooks/useScrollDirection'
+import { APP_COLUMN_MAX_PX } from '@/lib/app-column'
 
 const TABS = [
   { label: 'Home',       icon: Home,          href: '/catalog' },
@@ -30,7 +31,7 @@ export default function BottomTabs() {
         bottom: 0,
         left: 0,
         right: 0,
-        maxWidth: 768,
+        maxWidth: APP_COLUMN_MAX_PX,
         margin: '0 auto',
         background: '#FFFFFF',
         borderTop: '1px solid #E5E7EB',

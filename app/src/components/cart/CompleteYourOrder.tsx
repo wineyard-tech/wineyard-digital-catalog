@@ -133,7 +133,7 @@ export default function CompleteYourOrder() {
             ))
           : suggestions.map((item) => (
               <div key={item.zoho_item_id} style={{ width: 140, flexShrink: 0 }}>
-                <ProductCard item={item} />
+                <ProductCard item={item} imageVariant="recommendation" />
               </div>
             ))}
       </div>

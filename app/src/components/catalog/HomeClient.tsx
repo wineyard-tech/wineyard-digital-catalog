@@ -10,6 +10,11 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
+import {
+  normalizeCategoryIconUrls,
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+} from '@/lib/catalog/product-image-urls'
 import ProductCard from '@/components/catalog/ProductCard'
 import LoadingSkeleton from '@/components/shared/LoadingSkeleton'
 import CatalogPageHeader from '@/components/catalog/CatalogPageHeader'
@@ -55,6 +60,8 @@ export interface Category {
   category_name: string
   display_order: number
   icon_url: string | null
+  /** JSONB [400w, 800w, 1200w] — optional until backfill */
+  icon_urls?: unknown
   product_count?: number
 }
 
@@ -346,6 +353,9 @@ export default function HomeClient({ accountPrimary, accountSubtitle, categories
             >
               {sortedCategories.map((cat) => {
                 const Icon = getCategoryIcon(cat.category_name)
+                const categoryIconSlots = normalizeCategoryIconUrls(cat.icon_urls, cat.icon_url)
+                const categoryTileSrc =
+                  pickProductImageVariant(null, categoryIconSlots, PRODUCT_IMAGE_W400) ?? cat.icon_url
                 return (
                   <button
                     key={cat.zoho_category_id}
@@ -375,10 +385,10 @@ export default function HomeClient({ accountPrimary, accountSubtitle, categories
                         justifyContent: 'center',
                       }}
                     >
-                      {cat.icon_url ? (
+                      {categoryTileSrc ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={cat.icon_url}
+                          src={categoryTileSrc}
                           alt={cat.category_name}
                           style={{
                             display: 'block',

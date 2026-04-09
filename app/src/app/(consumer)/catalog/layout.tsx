@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import BottomTabs from '../../components/layout/BottomTabs'
-import CartBar from '../../components/cart/CartBar'
+import BottomTabs from '@/components/layout/BottomTabs'
+import CartBar from '@/components/cart/CartBar'
 
 /** Matches BottomTabs / Home / Buy again — single column on wide viewports */
 const CATALOG_COLUMN_MAX_PX = 768

@@ -136,7 +136,10 @@ export default function EnquiryDetailPage({
         rate: li.rate,
         tax_percentage: 18 as const,
         line_total: li.line_total || (li.quantity * li.rate),
+        image_urls: li.image_urls ?? null,
+        category_icon_urls: li.category_icon_urls ?? null,
         image_url: li.image_url,
+        category_icon_url: li.category_icon_url ?? null,
       }))
     )
     router.push('/cart')

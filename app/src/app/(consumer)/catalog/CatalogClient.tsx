@@ -11,11 +11,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, ChevronDown, ArrowLeft, LogOut, ClipboardList, MapPin } from 'lucide-react'
 import type { CatalogItem } from '@/types/catalog'
-import SearchBar from '../../components/catalog/SearchBar'
-import ProductGrid from '../../components/catalog/ProductGrid'
-import ProductCarousel from '../../components/catalog/ProductCarousel'
-import OfflineBanner from '../../components/shared/OfflineBanner'
-import { useScrollDirection } from '../../hooks/useScrollDirection'
+import SearchBar from '@/components/catalog/SearchBar'
+import ProductGrid from '@/components/catalog/ProductGrid'
+import ProductCarousel from '@/components/catalog/ProductCarousel'
+import OfflineBanner from '@/components/shared/OfflineBanner'
+import { useScrollDirection } from '@/hooks/useScrollDirection'
 
 // ... original CatalogClient implementation archived ...
 // Full source preserved in git history (commit prior to feat: archive CatalogClient).

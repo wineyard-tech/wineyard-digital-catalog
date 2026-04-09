@@ -9,7 +9,11 @@ const CART_PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 import { useCart } from './CartContext'
 import type { EnquiryResponse } from '@/types/catalog'
 import { readWlEnquiryFieldsFromDocumentCookie } from '@/lib/catalog/read-wl-enquiry-fields'
-import { resolveProductThumbnailUrl } from '@/lib/catalog/resolve-product-thumbnail-url'
+import {
+  pickProductImageVariant,
+  PRODUCT_IMAGE_W400,
+  resolveProductThumbnailUrl,
+} from '@/lib/catalog/resolve-product-thumbnail-url'
 
 interface CartSheetProps {
   open: boolean
@@ -196,7 +200,13 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
                   {/* Product thumbnail */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? CART_PLACEHOLDER}
+                    src={
+                      pickProductImageVariant(
+                        item.image_urls ?? null,
+                        item.category_icon_urls ?? null,
+                        PRODUCT_IMAGE_W400
+                      ) ?? resolveProductThumbnailUrl(item.image_url, item.category_icon_url) ?? CART_PLACEHOLDER
+                    }
                     alt={item.item_name}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).src = CART_PLACEHOLDER }}
                     style={{
