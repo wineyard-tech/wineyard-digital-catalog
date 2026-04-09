@@ -56,6 +56,9 @@ export async function GET(
     // line_items is empty when the row was synced from Zoho's list endpoint (which omits them).
     // Fetch the full detail from Zoho and write back to DB non-blocking so future loads are fast.
     if (storedLineItems.length === 0) {
+      console.info('[orders/id] GET invoice hydrate from Zoho', {
+        zoho_invoice_id: data.zoho_invoice_id,
+      })
       const zohoItems = await getZohoInvoiceLineItems(data.zoho_invoice_id)
       if (zohoItems && zohoItems.length > 0) {
         storedLineItems = zohoItems
