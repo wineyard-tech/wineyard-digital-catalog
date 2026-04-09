@@ -1,4 +1,0 @@
-{"sessionId":"cdbdb9","runId":"pre-pricing","hypothesisId":"H3","location":"api/enquiry/route.ts:POST","message":"cart shape before buildServerEnquiryLineItems","data":{"itemLines":3,"zohoIdsNonEmpty":3,"uniqueZohoItemIds":3,"duplicateLines":false},"timestamp":1775627696373}
-{"sessionId":"cdbdb9","runId":"post-pricing","hypothesisId":"H1","location":"api/enquiry/route.ts:POST","message":"buildServerEnquiryLineItems result","data":{"ok":true,"error":null},"timestamp":1775627696747}
-{"sessionId":"cdbdb9","runId":"pre-zoho","hypothesisId":"H2","location":"api/enquiry/route.ts:POST","message":"before createEstimate","data":{"hasLocationId":true,"lineCount":3},"timestamp":1775627697050}
-{"sessionId":"cdbdb9","runId":"zoho-payload","hypothesisId":"H4","location":"lib/zoho.ts:createEstimate","message":"Zoho estimate payload meta","data":{"orgTz":"Asia/Kolkata","today":"2026-04-08","expiry":"2026-05-08","lineCount":3,"hasLocationId":true},"timestamp":1775627697893}
