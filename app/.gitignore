@@ -18,7 +18,7 @@
 /out/
 
 #claude-worktrees
-/app/.claude/worktrees/
+/.claude/
 
 # production
 /build
