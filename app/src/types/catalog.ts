@@ -33,7 +33,6 @@ export interface CartItem {
   image_urls?: string[] | null;
   category_icon_urls?: string[] | null;
   image_url?: string | null;
-  /** categories.icon_url — used when product has no image_urls */
   category_icon_url?: string | null;
 }
 
@@ -132,7 +131,6 @@ export interface LineItemDetail {
   image_urls?: string[] | null;
   category_icon_urls?: string[] | null;
   image_url: string | null;
-  /** categories.icon_url when product image is missing */
   category_icon_url?: string | null;
 }
 

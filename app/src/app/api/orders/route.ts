@@ -279,6 +279,7 @@ export async function GET(request: NextRequest) {
   // and the detail screen has data without an extra round-trip.
   const hydrated = new Map<string, unknown[]>()
   const needHydration = page.filter((inv) => parseJsonbLineItems(inv.line_items).length === 0)
+  console.info('[orders] GET hydrate line_items', { count: needHydration.length, offset })
   const hydrateConcurrency = 5
   for (let i = 0; i < needHydration.length; i += hydrateConcurrency) {
     const slice = needHydration.slice(i, i + hydrateConcurrency)

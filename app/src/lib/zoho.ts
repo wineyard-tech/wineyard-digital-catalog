@@ -6,6 +6,72 @@ const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'
 
 const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
+const ZOHO_ERR_BODY_MAX = 4000
+
+/**
+ * Rich, log-friendly Zoho / OAuth error line: parses JSON when possible (code, message, full body)
+ * and appends optional correlation meta. Use for Vercel function logs.
+ */
+export function formatZohoError(
+  operation: string,
+  status: number,
+  rawBody: string,
+  meta?: Record<string, unknown>
+): string {
+  let detail: string
+  try {
+    const parsed: unknown = JSON.parse(rawBody)
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const o = parsed as Record<string, unknown>
+      const code = o.code
+      const message = o.message
+      const msgStr =
+        typeof message === 'string'
+          ? message
+          : message !== undefined && message !== null
+            ? JSON.stringify(message)
+            : undefined
+      const parts: string[] = []
+      if (code !== undefined) parts.push(`code=${String(code)}`)
+      if (msgStr !== undefined) parts.push(`message=${msgStr}`)
+      const bodyStr = JSON.stringify(parsed)
+      const truncated =
+        bodyStr.length > ZOHO_ERR_BODY_MAX ? `${bodyStr.slice(0, ZOHO_ERR_BODY_MAX)}…` : bodyStr
+      parts.push(`body=${truncated}`)
+      detail = parts.join(' ')
+    } else {
+      const s = JSON.stringify(parsed)
+      detail = `body=${s.length > ZOHO_ERR_BODY_MAX ? `${s.slice(0, ZOHO_ERR_BODY_MAX)}…` : s}`
+    }
+  } catch {
+    const raw =
+      rawBody.length > ZOHO_ERR_BODY_MAX ? `${rawBody.slice(0, ZOHO_ERR_BODY_MAX)}…` : rawBody
+    detail = `raw=${raw}`
+  }
+  const metaStr =
+    meta !== undefined && Object.keys(meta).length > 0 ? ` meta=${JSON.stringify(meta)}` : ''
+  return `${operation} http=${status} ${detail}${metaStr}`
+}
+
+function logZohoError(
+  operation: string,
+  status: number,
+  rawBody: string,
+  meta?: Record<string, unknown>
+): void {
+  console.error('[zoho]', formatZohoError(operation, status, rawBody, meta))
+}
+
+function throwZohoError(
+  operation: string,
+  status: number,
+  rawBody: string,
+  meta?: Record<string, unknown>
+): never {
+  const msg = formatZohoError(operation, status, rawBody, meta)
+  console.error('[zoho]', msg)
+  throw new Error(msg)
+}
 
 /**
  * Zoho Books `date` / `expiry_date` expect yyyy-MM-dd (API docs).
@@ -33,19 +99,6 @@ function formatOrgDateYmd(d: Date, timeZone: string): string {
   if (YMD_RE.test(fallback)) return fallback
 
   return d.toISOString().slice(0, 10)
-}
-
-/** Rich error string for logs (Vercel): surfaces Zoho JSON `code` / `message` when present. */
-function formatZohoEstimateError(status: number, errText: string): string {
-  try {
-    const parsed = JSON.parse(errText) as { code?: number; message?: string }
-    if (parsed && (parsed.message != null || parsed.code != null)) {
-      return `Zoho create estimate failed: http=${status} code=${parsed.code} message=${JSON.stringify(parsed.message)} raw=${errText}`
-    }
-  } catch {
-    // not JSON
-  }
-  return `Zoho create estimate failed: http=${status} — ${errText}`
 }
 
 /**
@@ -81,7 +134,8 @@ export async function getAccessToken(): Promise<string> {
   })
 
   if (!res.ok) {
-    throw new Error(`Zoho token refresh failed: ${res.status}`)
+    const errText = await res.text()
+    throwZohoError('OAuth token refresh', res.status, errText)
   }
 
   const tokenData = await res.json()
@@ -126,7 +180,11 @@ export async function getContactByPhoneWithMatch(phone: string): Promise<ZohoCon
       headers: { Authorization: `Zoho-oauthtoken ${token}` },
     })
 
-    if (!res.ok) return null
+    if (!res.ok) {
+      const errText = await res.text()
+      logZohoError('GET contacts', res.status, errText, { page })
+      return null
+    }
 
     const data = await res.json()
     const contacts: ZohoContact[] = data.contacts ?? []
@@ -178,6 +236,7 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
  * (which does not include line_items). Returns null on any failure.
  */
 export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<unknown[] | null> {
+  const meta = { zoho_invoice_id: zohoInvoiceId }
   try {
     const token = await getAccessToken()
     const orgId = process.env.ZOHO_ORG_ID!
@@ -186,21 +245,34 @@ export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<un
       { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
     )
     if (!res.ok) {
-      console.warn(`[zoho] getZohoInvoiceLineItems: HTTP ${res.status} for invoice ${zohoInvoiceId}`)
+      const errText = await res.text()
+      logZohoError(`GET invoices/${zohoInvoiceId}`, res.status, errText, meta)
       return null
     }
     const data = (await res.json()) as Record<string, unknown>
     const invoice = (data.invoice ?? data) as Record<string, unknown> | undefined
     const lineItems = invoice?.line_items
     if (!Array.isArray(lineItems)) {
-      console.warn(
-        `[zoho] getZohoInvoiceLineItems: no line_items in response for ${zohoInvoiceId}, code=${String(data.code)}, message=${String(data.message)}`
+      logZohoError(
+        `GET invoices/${zohoInvoiceId} (no line_items)`,
+        res.status,
+        JSON.stringify(data),
+        meta
       )
       return null
     }
     return lineItems
   } catch (err) {
-    console.warn(`[zoho] getZohoInvoiceLineItems: exception for ${zohoInvoiceId}:`, err)
+    console.error(
+      '[zoho]',
+      formatZohoError(
+        `GET invoices/${zohoInvoiceId} (exception)`,
+        0,
+        err instanceof Error ? err.message : String(err),
+        meta
+      ),
+      err
+    )
     return null
   }
 }
@@ -211,6 +283,7 @@ export async function getZohoInvoiceLineItems(zohoInvoiceId: string): Promise<un
  * (which does not include line_items). Returns null on any failure.
  */
 export async function getZohoEstimateLineItems(zohoEstimateId: string): Promise<unknown[] | null> {
+  const meta = { zoho_estimate_id: zohoEstimateId }
   try {
     const token = await getAccessToken()
     const orgId = process.env.ZOHO_ORG_ID!
@@ -218,10 +291,34 @@ export async function getZohoEstimateLineItems(zohoEstimateId: string): Promise<
       `${ZOHO_API_BASE}/estimates/${zohoEstimateId}?organization_id=${orgId}`,
       { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
     )
-    if (!res.ok) return null
-    const data = await res.json()
-    return Array.isArray(data.estimate?.line_items) ? data.estimate.line_items : null
-  } catch {
+    if (!res.ok) {
+      const errText = await res.text()
+      logZohoError(`GET estimates/${zohoEstimateId}`, res.status, errText, meta)
+      return null
+    }
+    const data = (await res.json()) as Record<string, unknown>
+    const lineItems = (data.estimate as Record<string, unknown> | undefined)?.line_items
+    if (!Array.isArray(lineItems)) {
+      logZohoError(
+        `GET estimates/${zohoEstimateId} (no line_items)`,
+        res.status,
+        JSON.stringify(data),
+        meta
+      )
+      return null
+    }
+    return lineItems
+  } catch (err) {
+    console.error(
+      '[zoho]',
+      formatZohoError(
+        `GET estimates/${zohoEstimateId} (exception)`,
+        0,
+        err instanceof Error ? err.message : String(err),
+        meta
+      ),
+      err
+    )
     return null
   }
 }
@@ -276,6 +373,16 @@ export async function createEstimate(
     ...(options?.locationId ? { location_id: options.locationId } : {}),
   }
 
+  console.info('[zoho] createEstimate:date-context', {
+    orgTzEnvSet: Boolean(process.env.ZOHO_ORG_TIMEZONE?.trim()),
+    orgTz,
+    today,
+    expiry,
+    nowUtc: now.toISOString(),
+    lineCount: lineItems.length,
+    hasLocationId: Boolean(options?.locationId),
+  })
+
   const res = await fetch(`${ZOHO_API_BASE}/estimates?organization_id=${orgId}`, {
     method: 'POST',
     headers: {
@@ -287,7 +394,7 @@ export async function createEstimate(
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(formatZohoEstimateError(res.status, errText))
+    throwZohoError('POST estimates', res.status, errText)
   }
 
   return res.json()
@@ -302,6 +409,7 @@ export async function createEstimate(
  * a URL rather than blocking the estimate flow.
  */
 export async function getEstimatePublicUrl(zohoEstimateId: string): Promise<string | null> {
+  const meta = { zoho_estimate_id: zohoEstimateId }
   try {
     const token = await getAccessToken()
     const orgId = process.env.ZOHO_ORG_ID!
@@ -311,11 +419,25 @@ export async function getEstimatePublicUrl(zohoEstimateId: string): Promise<stri
       { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
     )
 
-    if (!res.ok) return null
+    if (!res.ok) {
+      const errText = await res.text()
+      logZohoError(`GET estimates/${zohoEstimateId} (public url)`, res.status, errText, meta)
+      return null
+    }
 
     const data: ZohoEstimateResponse = await res.json()
     return data.estimate.estimate_url ?? null
-  } catch {
+  } catch (err) {
+    console.error(
+      '[zoho]',
+      formatZohoError(
+        `GET estimates/${zohoEstimateId} (public url exception)`,
+        0,
+        err instanceof Error ? err.message : String(err),
+        meta
+      ),
+      err
+    )
     return null
   }
 }
@@ -370,7 +492,7 @@ export async function createSalesOrder(
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`Zoho create sales order failed: ${res.status} — ${errText}`)
+    throwZohoError('POST salesorders', res.status, errText)
   }
 
   return res.json()
@@ -396,7 +518,9 @@ export async function markEstimateSent(zohoEstimateId: string): Promise<void> {
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`Zoho mark estimate sent failed: ${res.status} — ${errText}`)
+    throwZohoError(`POST estimates/${zohoEstimateId}/status/sent`, res.status, errText, {
+      zoho_estimate_id: zohoEstimateId,
+    })
   }
 }
 
@@ -418,6 +542,8 @@ export async function markEstimateAccepted(zohoEstimateId: string): Promise<void
 
   if (!res.ok) {
     const errText = await res.text()
-    throw new Error(`Zoho mark estimate accepted failed: ${res.status} — ${errText}`)
+    throwZohoError(`POST estimates/${zohoEstimateId}/status/accepted`, res.status, errText, {
+      zoho_estimate_id: zohoEstimateId,
+    })
   }
 }
