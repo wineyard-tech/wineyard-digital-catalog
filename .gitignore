@@ -6,6 +6,7 @@
 app/.next/
 app/out/
 app/node_modules/
+node_modules/
 
 # Supabase
 supabase/.branches/
@@ -23,12 +24,10 @@ Thumbs.db
 # Generated
 types/database.generated.ts
 
-# Claude Code local settings
-.claude/settings.local.json
-node_modules/
-.worktrees/
+# External Tools and Assistants
 .claude/
 .claire/
 .cursor/
-.vercel
-.env*.local
+.playwright-mcp/
+.vercel/
+.vscode/
