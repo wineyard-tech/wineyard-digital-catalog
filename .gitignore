@@ -26,10 +26,9 @@ types/database.generated.ts
 # Claude Code local settings
 .claude/settings.local.json
 node_modules/
-.worktrees/**/.env.local
-.claude/worktrees/**/.env.local
-.claude/worktrees/**/.claude/
-.claire/worktrees/**/
+.worktrees/
+.claude/
+.claire/
 .cursor/
 .vercel
 .env*.local
