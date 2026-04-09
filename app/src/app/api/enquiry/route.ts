@@ -315,6 +315,10 @@ export async function POST(request: NextRequest) {
   let zohoEstimateNumber: string
 
   try {
+    console.info('[enquiry] POST createEstimate', {
+      lineCount: body.items.length,
+      hasLocation: Boolean(nearestLocationId),
+    })
     const zohoRes = await withOneRetry(() =>
       createEstimate(session.zoho_contact_id, body.items, {
         notes: body.notes,
