@@ -1,5 +1,5 @@
 // rebuild-customer-profiles Edge Function
-// Runs weekly Monday 8am IST, after compute-product-associations (Sunday 8pm IST).
+// Weekly Sunday ~6:10 AM IST via pg_cron, after refresh-product-popularity (scripts/deploy-cron.sql).
 //
 // For each customer with ≥1 order in the last 180 days, computes:
 //   system_affinity  — dominant system_type from 90-day line items (excludes universal/service)

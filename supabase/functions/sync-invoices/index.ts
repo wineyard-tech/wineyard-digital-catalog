@@ -1,6 +1,6 @@
 // sync-invoices Edge Function
 // Incremental sync: fetches only invoices modified since yesterday 03:55 AM IST.
-// Runs daily at 04:10 AM IST via pg_cron (10 min after sync-items, 5 min after sync-contacts).
+// Daily ~5:15 AM IST via pg_cron (scripts/deploy-cron.sql).
 // The 5-minute overlap on the cutoff time prevents records modified on the exact boundary
 // from being missed.
 //
