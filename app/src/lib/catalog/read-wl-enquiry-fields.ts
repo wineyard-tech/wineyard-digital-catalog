@@ -1,3 +1,5 @@
+import { getActiveWlCookieRecord } from '@/lib/catalog/wl-cookie'
+
 /**
  * Fields from the `wl` cookie used when POSTing /api/enquiry (client-only).
  */
@@ -24,7 +26,9 @@ export function parseWlWarehouseZohoIdValue(raw: unknown): string | null {
   return null
 }
 
-export function parseWlWarehouseName(data: Record<string, unknown>): string | null {
+export function parseWlWarehouseName(parsedCookie: unknown): string | null {
+  const data = getActiveWlCookieRecord(parsedCookie)
+  if (!data) return null
   const w = data.warehouse_name
   if (typeof w === 'string' && w.trim() !== '') return w.trim()
   return null
@@ -42,7 +46,11 @@ export function readWlEnquiryFieldsFromDocumentCookie(): WlEnquiryFields {
     if (!match) {
       return { user_lat: null, user_lng: null, nearest_location_id: null }
     }
-    const data = JSON.parse(decodeURIComponent(match.slice(3))) as Record<string, unknown>
+    const parsed = JSON.parse(decodeURIComponent(match.slice(3)))
+    const data = getActiveWlCookieRecord(parsed)
+    if (!data) {
+      return { user_lat: null, user_lng: null, nearest_location_id: null }
+    }
     const lat = parseWlFiniteCoord(data.lat)
     const lng = parseWlFiniteCoord(data.lng)
     const nearest_location_id = parseWlWarehouseZohoIdValue(data.warehouse_zoho_location_id)

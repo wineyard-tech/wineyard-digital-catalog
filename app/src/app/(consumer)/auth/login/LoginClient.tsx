@@ -27,6 +27,7 @@ export default function LoginClient() {
   async function handleSendOTP(phoneNumber: string) {
     setLoading(true)
     setError('')
+    let navigatedToVerify = false
     try {
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
@@ -50,6 +51,7 @@ export default function LoginClient() {
         ph.capture('otp_requested', {
           phone_suffix: phoneNumber.slice(-4),
         })
+        navigatedToVerify = true
         router.push(`/auth/verify?phone=${encodeURIComponent(phoneNumber)}`)
       } else if (data.registered && !data.catalogAccess) {
         ph.capture('auth_failed', {
@@ -67,7 +69,9 @@ export default function LoginClient() {
     } catch {
       setError('Network error. Please check your connection.')
     } finally {
-      setLoading(false)
+      if (!navigatedToVerify) {
+        setLoading(false)
+      }
     }
   }
 

@@ -19,6 +19,7 @@ import {
   PRODUCT_IMAGE_W400,
   resolveProductThumbnailUrl,
 } from '@/lib/catalog/resolve-product-thumbnail-url'
+import { useEnquirySyncUpdates } from '@/hooks/use-enquiry-sync-updates'
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 0 })
@@ -32,8 +33,8 @@ const PLACEHOLDER = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 
 
 interface EstimateBanner {
-  public_id: string          // UUID — passed as estimate_id when placing order
-  estimate_number: string
+  public_id: string
+  estimate_number: string | null
   zoho_sync_status: string
   expires_at: string
 }
@@ -57,6 +58,8 @@ export default function CartPage() {
   const [deliveryArea, setDeliveryArea] = useState<string | null>(null)
   const [warehouseName, setWarehouseName] = useState<string | null>(null)
 
+  useEnquirySyncUpdates(quoteResult, setQuoteResult)
+
   // Read wl cookie (warehouse_name is set on the location screen — no /api/nearest-location here).
   useEffect(() => {
     function syncWlCookieFromDocument() {
@@ -67,9 +70,9 @@ export default function CartPage() {
           setWarehouseName(null)
           return
         }
-        const data = JSON.parse(decodeURIComponent(match.slice(3))) as Record<string, unknown>
-        setDeliveryArea(getWlHeaderLabelFromParsed(data))
-        setWarehouseName(parseWlWarehouseName(data))
+        const parsed = JSON.parse(decodeURIComponent(match.slice(3)))
+        setDeliveryArea(getWlHeaderLabelFromParsed(parsed))
+        setWarehouseName(parseWlWarehouseName(parsed))
       } catch {
         /* malformed cookie — ignore */
       }
@@ -140,7 +143,7 @@ export default function CartPage() {
         loadItems(data.line_items as CartItem[])
         setEstimateBanner({
           public_id: estimateId,
-          estimate_number: data.estimate_number,
+          estimate_number: data.estimate_number ?? null,
           zoho_sync_status: data.zoho_sync_status,
           expires_at: data.expires_at,
         })
@@ -252,19 +255,42 @@ export default function CartPage() {
 
   // ── Quote success screen ──────────────────────────────────────────────────
   if (quoteResult) {
+    const dup = quoteResult.duplicate_of
     return (
       <div style={{ maxWidth: 768, margin: '0 auto', minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, textAlign: 'center', background: '#F8FAFB' }}>
         <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
-        <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: '#1A1A2E' }}>Quotation sent!</h2>
-        <p style={{ margin: '0 0 4px', fontSize: 14, color: '#6B7280' }}>{quoteResult.estimate_number}</p>
-        {quoteResult.sync_pending && (
-          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#D97706', background: '#FFFBEB', padding: '4px 10px', borderRadius: 6 }}>
-            Quote syncing with system — we&apos;ll confirm shortly.
+        <h2 style={{ margin: '0 0 8px', fontSize: 20, fontWeight: 700, color: '#1A1A2E' }}>Enquiry received</h2>
+        <p style={{ margin: '0 0 12px', fontSize: 14, color: '#374151', lineHeight: 1.5, maxWidth: 360 }}>
+          {quoteResult.message ??
+            'You will receive a WhatsApp confirmation and a call from our team in the next 1 hour.'}
+        </p>
+        {dup && (
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#6B7280' }}>
+            We already have a recent quote for this cart.{' '}
+            <button
+              type="button"
+              onClick={() => router.push(`/catalog/orders/enquiry/${dup.public_id}`)}
+              style={{ background: 'none', border: 'none', color: '#1D4ED8', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', padding: 0 }}
+            >
+              View existing estimate
+            </button>
           </p>
         )}
-        <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
-          Our team will contact you within 1 hour. Check WhatsApp for updates.
-        </p>
+        {quoteResult.estimate_number ? (
+           <p style={{ margin: '0 0 8px', fontSize: 14, color: '#6B7280', fontWeight: 600 }}>
+             Estimate Number #{quoteResult.estimate_number}
+           </p>
+         ) : null}
+        {quoteResult.sync_pending && (
+          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#D97706', background: '#FFFBEB', padding: '4px 10px', borderRadius: 6 }}>
+            Your Estimate is being generated. It will be sent to your WhatsApp shortly.
+          </p>
+        )}
+        {quoteResult.zoho_sync_status === 'FAILED' && !dup && (
+          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#6B7280' }}>
+            Your Estimate is being generated. It will be sent to your WhatsApp shortly.
+          </p>
+        )}
         {quoteResult.estimate_url && (
           <a
             href={quoteResult.estimate_url}
@@ -272,7 +298,7 @@ export default function CartPage() {
             rel="noopener noreferrer"
             style={{ display: 'block', marginBottom: 12, width: '100%', maxWidth: 280, background: '#EFF6FF', color: '#1D4ED8', border: '1.5px solid #BFDBFE', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
           >
-            Open Estimate ↗
+            Open Estimate PDF ↗
           </a>
         )}
         <button
@@ -330,6 +356,8 @@ export default function CartPage() {
   const anyLoading = loading
   const hasLocation = deliveryArea !== null
   const isButtonDisabled = anyLoading || items.length === 0 || !hasLocation
+  /** Filled CTA when cart + location are valid (including while `loading` — button stays `disabled` but remains green). */
+  const getQuotePrimaryStyle = hasLocation && items.length > 0
 
   // ── Main cart ─────────────────────────────────────────────────────────────
   return (
@@ -357,8 +385,8 @@ export default function CartPage() {
         {estimateBanner && (
           <div style={{ margin: '12px 16px 0', padding: '10px 14px', background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8 }}>
             <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#1D4ED8' }}>
-              {estimateBanner.zoho_sync_status === 'pending_zoho_sync'
-                ? 'Quote #pending — syncing with system...'
+              {estimateBanner.zoho_sync_status === 'PENDING' || !estimateBanner.estimate_number
+                ? 'Quote pending — syncing with system...'
                 : `Reviewing Quote #${estimateBanner.estimate_number}`}
             </p>
             <p style={{ margin: '2px 0 0', fontSize: 11, color: '#6B7280' }}>
@@ -485,9 +513,9 @@ export default function CartPage() {
             title={!isAuthenticated ? 'Registration Required' : undefined}
             style={{
               width: '100%',
-              background: '#FFFFFF',
-              color: isButtonDisabled ? '#9CA3AF' : '#059669',
-              border: `1.5px solid ${isButtonDisabled ? '#D1D5DB' : '#059669'}`,
+              background: getQuotePrimaryStyle ? '#059669' : '#D1D5DB',
+              color: getQuotePrimaryStyle ? '#FFFFFF' : '#9CA3AF',
+              border: 'none',
               borderRadius: 10,
               padding: '12px 0',
               fontSize: 14,
@@ -500,8 +528,8 @@ export default function CartPage() {
             }}
           >
             {loading
-              ? <span style={{ width: 16, height: 16, border: '2px solid #059669', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
-              : <MessageCircle size={16} />
+              ? <span style={{ width: 16, height: 16, border: '2px solid #FFFFFF', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
+              : <MessageCircle size={16} color={getQuotePrimaryStyle ? '#FFFFFF' : '#9CA3AF'} />
             }
             {loading ? 'Sending...' : 'Get Quote'}
           </button>
