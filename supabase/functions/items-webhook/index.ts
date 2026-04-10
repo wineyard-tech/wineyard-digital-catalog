@@ -182,7 +182,7 @@ async function handleUpsert(
     upc:                       item.upc || null,
     ean:                       item.ean || null,
     part_number:               item.part_number || null,
-    image_urls:                (item.image_documents ?? []).map((img) => img.image_url).filter(Boolean),
+    // image_urls:                (item.image_documents ?? []).map((img) => img.image_url).filter(Boolean), // Ignore from sync (will be updated manually and directly)
     custom_fields:             item.custom_fields ?? {},
     created_time:              item.created_time || null,
     last_modified_time:        item.last_modified_time || null,

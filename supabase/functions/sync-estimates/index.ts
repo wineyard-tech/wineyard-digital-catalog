@@ -108,6 +108,9 @@ serve(async (req) => {
           // The DB preserve_source trigger silently ignores this on UPDATE,
           // keeping the original 'catalog-app' value for app-created estimates.
           source:           'zoho',
+          estimate_url:     e.estimate_url || null,
+          expires_at:       e.expiry_date || null,
+          location_id:      e.location_id || null,
           updated_at:       new Date().toISOString(),
         })
       }

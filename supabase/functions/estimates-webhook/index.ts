@@ -63,6 +63,8 @@ interface ZohoEstimatePayload {
   gstin?: string
   created_time?: string
   last_modified_time?: string
+  estimate_url?: string
+  location_id?: string
 }
 
 interface ZohoWebhookPayload {
@@ -154,6 +156,9 @@ async function handleUpsert(
     notes:             estimate.notes || null,
     zoho_sync_status:  'SYNCED',
     updated_at:        new Date().toISOString(),
+    estimate_url:      estimate.estimate_url || null,
+    expires_at:        estimate.expiry_date || null,
+    location_id:       estimate.location_id || null,
   }
 
   // ── Delta: fetch existing record and log what changed ──────────────────────

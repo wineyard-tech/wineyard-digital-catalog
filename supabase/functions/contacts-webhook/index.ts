@@ -26,9 +26,9 @@ const logger = makeLogger('[contacts-webhook]')
 // the unique key used to authenticate integrators.
 const WATCHED_FIELDS = [
   'status', 'contact_name', 'company_name',
-  'pricebook_id', 'phone', 'email',
+  'pricebook_id', 'phone', 'email', 'contact_persons',
   'payment_terms', 'payment_terms_label',
-  'currency_code', 'contact_type',
+  'currency_code', 'contact_type', 'custom_fields',
   'online_catalogue_access', 'catalog_access',
 ]
 
@@ -44,6 +44,7 @@ interface ZohoContactPerson {
   is_primary_contact?: boolean
   communication_preference?: string
   custom_fields?: Array<{ api_name?: string; value?: unknown; [key: string]: unknown }>
+  status?: string
 }
 
 interface ZohoContactPayload {
@@ -272,7 +273,7 @@ async function handleUpsert(
         communication_preference: p.communication_preference ?? null,
         online_catalogue_access:  parentOnlineCatalogue,
         catalog_access:           parentCatalogAccess,
-        status:                   'active',
+        status:                   p.status ?? 'active',
         updated_at:               new Date().toISOString(),
       }))
 
