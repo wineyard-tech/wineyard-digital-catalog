@@ -203,7 +203,7 @@ export default function EnquiryDetailPage({
         position: 'sticky', top: 0, zIndex: 10,
       }}>
         <button
-          onClick={() => router.back()}
+          onClick={() => router.push('/catalog/orders?tab=enquiries')}
           aria-label="Go back"
           style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}
         >

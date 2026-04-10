@@ -1,11 +1,10 @@
 import { createServiceClient } from './supabase/server'
-import type { ZohoContact, ZohoEstimateResponse, ZohoSalesOrderResponse } from '@/types/zoho'
+import type { ZohoContact, ZohoSalesOrderResponse } from '@/types/zoho'
 import type { CartItem } from '@/types/catalog'
 
 const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 const ZOHO_OAUTH_URL = 'https://accounts.zoho.in/oauth/v2/token'
 
-const YMD_RE = /^\d{4}-\d{2}-\d{2}$/
 const ZOHO_ERR_BODY_MAX = 4000
 
 /**
@@ -71,34 +70,6 @@ function throwZohoError(
   const msg = formatZohoError(operation, status, rawBody, meta)
   console.error('[zoho]', msg)
   throw new Error(msg)
-}
-
-/**
- * Zoho Books `date` / `expiry_date` expect yyyy-MM-dd (API docs).
- * Use `sv-SE` + `.format()` — stable YYYY-MM-DD across Node/ICU (Vercel Linux vs macOS).
- * `en-CA` + formatToParts has produced values Zoho rejects as "Invalid time format" on some runtimes.
- */
-function formatOrgDateYmd(d: Date, timeZone: string): string {
-  const tz = (timeZone ?? '').trim() || 'Asia/Kolkata'
-  const fmt = (zone: string): string =>
-    new Intl.DateTimeFormat('sv-SE', {
-      timeZone: zone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(d)
-
-  try {
-    const s = fmt(tz)
-    if (YMD_RE.test(s)) return s
-  } catch {
-    // invalid IANA time zone string
-  }
-
-  const fallback = fmt('Asia/Kolkata')
-  if (YMD_RE.test(fallback)) return fallback
-
-  return d.toISOString().slice(0, 10)
 }
 
 /**
@@ -324,125 +295,6 @@ export async function getZohoEstimateLineItems(zohoEstimateId: string): Promise<
 }
 
 /**
- * Creates an estimate in Zoho Books.
- *
- * Pricing strategy: Zoho Estimates API does not accept a pricebook_id at the
- * document level, so we send rate explicitly per line item. CartItem.rate is
- * already pricebook-resolved by the catalog (pricebook_rate ?? base_rate),
- * so this correctly honours per-contact pricing without a separate lookup.
- *
- * options.locationId: Zoho location_id of the nearest warehouse — passed as
- * `location_id` in the request body so the estimate is associated with that
- * warehouse for fulfilment routing.
- */
-export async function createEstimate(
-  contactId: string,
-  lineItems: CartItem[],
-  options?: { notes?: string; locationId?: string | null }
-): Promise<ZohoEstimateResponse> {
-  const token = await getAccessToken()
-  const orgId = process.env.ZOHO_ORG_ID!
-
-  // Notes: GST messaging on the Zoho PDF. tax_treatment out_of_scope keeps Total = Subtotal.
-  const gstNote = `All prices inclusive of GST`
-  const notesText = [gstNote, options?.notes].filter(Boolean).join('\n')
-
-  // https://www.zoho.com/books/api/v3/estimates/#create-an-estimate — date / expiry_date: YYYY-MM-DD
-  const orgTz = process.env.ZOHO_ORG_TIMEZONE?.trim() || 'Asia/Kolkata'
-  const now = new Date()
-  const today = formatOrgDateYmd(now, orgTz)
-  const expiry = formatOrgDateYmd(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), orgTz)
-
-  const body = {
-    customer_id: contactId,
-    date: today,
-    expiry_date: expiry,
-    // tax_treatment: 'out_of_scope' prevents Zoho org-level default taxes from inflating
-    // the estimate total — Total = Subtotal in the Zoho portal, matching the app.
-    // GST info is surfaced via the notes field above instead of Zoho's tax engine.
-    is_inclusive_tax: false,
-    tax_treatment: 'out_of_scope',
-    // Omit tax_id when not applying Books tax — empty string is not a valid numeric tax id per API docs.
-    line_items: lineItems.map((item) => ({
-      item_id: item.zoho_item_id,
-      name: item.item_name,
-      quantity: item.quantity,
-      rate: item.rate, // pricebook_rate ?? base_rate — resolved by resolvePrice()
-    })),
-    notes: notesText,
-    ...(options?.locationId ? { location_id: options.locationId } : {}),
-  }
-
-  console.info('[zoho] createEstimate:date-context', {
-    orgTzEnvSet: Boolean(process.env.ZOHO_ORG_TIMEZONE?.trim()),
-    orgTz,
-    today,
-    expiry,
-    nowUtc: now.toISOString(),
-    lineCount: lineItems.length,
-    hasLocationId: Boolean(options?.locationId),
-  })
-
-  const res = await fetch(`${ZOHO_API_BASE}/estimates?organization_id=${orgId}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Zoho-oauthtoken ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  })
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throwZohoError('POST estimates', res.status, errText)
-  }
-
-  return res.json()
-}
-
-/**
- * Fetches the public shareable URL for an existing Zoho estimate.
- *
- * The POST /estimates response does not include estimate_url — it is only
- * available on the GET /estimates/{id} response. This function is a best-effort
- * wrapper: it returns null on any failure so the caller can proceed without
- * a URL rather than blocking the estimate flow.
- */
-export async function getEstimatePublicUrl(zohoEstimateId: string): Promise<string | null> {
-  const meta = { zoho_estimate_id: zohoEstimateId }
-  try {
-    const token = await getAccessToken()
-    const orgId = process.env.ZOHO_ORG_ID!
-
-    const res = await fetch(
-      `${ZOHO_API_BASE}/estimates/${zohoEstimateId}?organization_id=${orgId}`,
-      { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
-    )
-
-    if (!res.ok) {
-      const errText = await res.text()
-      logZohoError(`GET estimates/${zohoEstimateId} (public url)`, res.status, errText, meta)
-      return null
-    }
-
-    const data: ZohoEstimateResponse = await res.json()
-    return data.estimate.estimate_url ?? null
-  } catch (err) {
-    console.error(
-      '[zoho]',
-      formatZohoError(
-        `GET estimates/${zohoEstimateId} (public url exception)`,
-        0,
-        err instanceof Error ? err.message : String(err),
-        meta
-      ),
-      err
-    )
-    return null
-  }
-}
-
-/**
  * Creates a Sales Order in Zoho Books.
  *
  * Pricing strategy: Sales Orders support pricebook_id at the document level.
@@ -496,32 +348,6 @@ export async function createSalesOrder(
   }
 
   return res.json()
-}
-
-/**
- * Marks a Zoho estimate as "sent".
- * Must be called after createEstimate so the estimate is visible to the customer
- * and the public estimate_url becomes available on the GET response.
- * Throws on failure — callers should treat this as best-effort and catch.
- */
-export async function markEstimateSent(zohoEstimateId: string): Promise<void> {
-  const token = await getAccessToken()
-  const orgId = process.env.ZOHO_ORG_ID!
-
-  const res = await fetch(
-    `${ZOHO_API_BASE}/estimates/${zohoEstimateId}/status/sent?organization_id=${orgId}`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Zoho-oauthtoken ${token}` },
-    }
-  )
-
-  if (!res.ok) {
-    const errText = await res.text()
-    throwZohoError(`POST estimates/${zohoEstimateId}/status/sent`, res.status, errText, {
-      zoho_estimate_id: zohoEstimateId,
-    })
-  }
 }
 
 /**

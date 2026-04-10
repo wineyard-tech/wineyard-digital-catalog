@@ -955,7 +955,7 @@ async function syncAllEstimates(
         tax_total:        dec(e.tax_total) ?? 0,
         total:            dec(e.total) ?? 0,
         notes:            e.notes || null,
-        zoho_sync_status: 'synced',
+        zoho_sync_status: 'SYNCED',
         source:           'zoho',
         updated_at:       new Date().toISOString(),
       })
@@ -1114,7 +1114,7 @@ async function syncAllInvoices(
         tds_amount:                 dec(inv.tds_amount) ?? 0,
         shipping_charge:            dec(inv.shipping_charge) ?? 0,
         estimate_number:            inv.estimate_number || null,
-        zoho_sync_status:           'synced',
+        zoho_sync_status:           'SYNCED',
         source:                     'zoho',
         updated_at:                 new Date().toISOString(),
       })

@@ -103,7 +103,7 @@ serve(async (req) => {
           tax_total:        dec(e.tax_total) ?? 0,
           total:            dec(e.total) ?? 0,
           notes:            e.notes || null,
-          zoho_sync_status: 'synced',
+          zoho_sync_status: 'SYNCED',
           // source is intentionally included so new rows get 'zoho'.
           // The DB preserve_source trigger silently ignores this on UPDATE,
           // keeping the original 'catalog-app' value for app-created estimates.
