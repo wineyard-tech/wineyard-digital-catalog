@@ -509,6 +509,8 @@ serve(async (req) => {
       await supabase
         .from('estimates')
         .update({
+          status: 'sent',
+          whatsapp_sent: true,
           app_whatsapp_sent: true,
           whatsapp_sent_at: new Date().toISOString(),
           app_whatsapp_message_id: customerMessageId,
