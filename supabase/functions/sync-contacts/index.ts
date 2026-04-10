@@ -1,7 +1,7 @@
 // sync-contacts Edge Function
-// Incremental sync: fetches only contacts modified since yesterday 03:55 AM IST.
-// Runs daily at 04:05 AM IST via pg_cron (5 min after sync-items to avoid Zoho rate limits).
-// The 5-minute overlap on the cutoff time prevents records modified on the exact boundary
+// Incremental sync: last_modified_time = T−24h5m (getLastModifiedFilter).
+// Daily ~5:10 AM IST via pg_cron (staggered after sync-items; scripts/deploy-cron.sql).
+// The overlap on the cutoff prevents records modified on the exact boundary
 // from being missed.
 //
 // Phone extraction priority per contact:

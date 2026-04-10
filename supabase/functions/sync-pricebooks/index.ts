@@ -1,6 +1,6 @@
 // sync-pricebooks Edge Function
-// Incremental sync: fetches only pricebooks modified since yesterday 03:55 AM IST.
-// Runs weekly (Sundays at 03:30 AM IST) via pg_cron, or triggered manually.
+// Incremental sync: last_modified_time = T−24h5m (getLastModifiedFilter).
+// Daily ~5:05 AM IST via pg_cron (scripts/deploy-cron.sql), or triggered manually.
 //
 // Consistent with sync-items and sync-contacts: uses getLastModifiedFilter() so only
 // records changed in the last ~24 hours are fetched, preventing full-scan timeouts.

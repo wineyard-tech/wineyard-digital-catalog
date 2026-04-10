@@ -6,7 +6,7 @@
 //   4. Upserts into product_popularity
 //   5. Excludes items with system_type = 'service'
 //
-// Triggered daily at 04:30 AM IST (23:00 UTC) via pg_cron → net.http_post.
+// Weekly Sunday ~6:00 AM IST via pg_cron (scripts/deploy-cron.sql) → net.http_post.
 // Can also be triggered manually: POST /functions/v1/refresh-product-popularity
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'

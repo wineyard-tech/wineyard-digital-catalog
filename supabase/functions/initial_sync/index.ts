@@ -135,11 +135,12 @@ async function geocodeLocations(supabase: ReturnType<typeof createClient>) {
     const addressStr = typeof row.address === 'string'
       ? row.address
       : [
-          row.address?.address,
+          row.address?.street_address1,
+          row.address?.street_address2,
           row.address?.city,
-          row.address?.state,
-          row.address?.zip,
-          'India',
+          row.address?.state_code,
+          row.address?.country,
+          row.address?.postal_code,
         ].filter(Boolean).join(', ')
 
     if (!addressStr.trim()) {
@@ -238,7 +239,7 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
         return {
           zoho_category_id: id,
           category_name:    name,
-          // display_order:    categoryOrderMap.get(id)!, // ignore category order for now
+          // display_order:    categoryOrderMap.get(id)!, // Ignore Display order; set manually and directly
         }
       })
       const { error: catErr } = await supabase
@@ -298,7 +299,7 @@ async function syncAllItems(supabase: ReturnType<typeof createClient>, token: st
       upc:                     item.upc || null,
       ean:                     item.ean || null,
       part_number:             item.part_number || null,
-      // image_urls:              (item.image_documents ?? []).map((img: any) => img.image_url).filter(Boolean),
+      // image_urls:              (item.image_documents ?? []).map((img: any) => img.image_url).filter(Boolean), // Ignore from sync (will be updated manually and directly)
       custom_fields:           item.custom_fields ?? {},
       created_time:            item.created_time || null,
       last_modified_time:      item.last_modified_time || null,
@@ -601,8 +602,8 @@ async function syncAllContacts(
         currency_id:                contact.currency_id || null,
         currency_code:              contact.currency_code || 'INR',
         custom_fields:              Array.isArray(contact.custom_fields) ? contact.custom_fields : [],
-        online_catalogue_access: contact_online_catalogue_access,
-        catalog_access: contact_catalog_access,
+        online_catalogue_access:    contact_online_catalogue_access,
+        catalog_access:             contact_catalog_access,
         created_time:               contact.created_time || null,
         last_modified_time:         contact.last_modified_time || null,
         updated_at:                 new Date().toISOString(),
@@ -621,8 +622,8 @@ async function syncAllContacts(
           mobile:                   normalizeIndianPhone(person.mobile),
           is_primary:               person.is_primary_contact ?? false,
           communication_preference: person.communication_preference ?? null,
-          online_catalogue_access: contact_online_catalogue_access,
-          catalog_access: contact_catalog_access,
+          online_catalogue_access:  contact_online_catalogue_access,
+          catalog_access:           contact_catalog_access,
         })
       }
     }
@@ -957,6 +958,9 @@ async function syncAllEstimates(
         notes:            e.notes || null,
         zoho_sync_status: 'SYNCED',
         source:           'zoho',
+        estimate_url:     e.estimate_url || null,
+        expires_at:       e.expiry_date || null,
+        location_id:      e.location_id || null,
         updated_at:       new Date().toISOString(),
       })
     }
