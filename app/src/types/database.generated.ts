@@ -301,16 +301,25 @@ export type Database = {
       }
       estimates: {
         Row: {
+          app_whatsapp_message_id: string | null
+          app_whatsapp_sent: boolean
+          cart_hash: string | null
+          contact_location: string | null
           contact_phone: string
           converted_at: string | null
           converted_to_salesorder_id: number | null
           created_at: string | null
           date: string | null
-          estimate_number: string
+          estimate_number: string | null
+          estimate_url: string | null
+          expires_at: string | null
           expiry_date: string | null
           id: number
           line_items: Json
+          location_id: string | null
           notes: string | null
+          public_id: string
+          source: string
           status: string
           subtotal: number
           tax_total: number
@@ -320,18 +329,30 @@ export type Database = {
           whatsapp_sent_at: string | null
           zoho_contact_id: string | null
           zoho_estimate_id: string | null
+          zoho_sync_attempts: number
+          zoho_sync_error: string | null
+          zoho_sync_status: 'PENDING' | 'SYNCED' | 'FAILED'
         }
         Insert: {
+          app_whatsapp_message_id?: string | null
+          app_whatsapp_sent?: boolean
+          cart_hash?: string | null
+          contact_location?: string | null
           contact_phone: string
           converted_at?: string | null
           converted_to_salesorder_id?: number | null
           created_at?: string | null
           date?: string | null
-          estimate_number?: string
+          estimate_number?: string | null
+          estimate_url?: string | null
+          expires_at?: string | null
           expiry_date?: string | null
           id?: number
           line_items: Json
+          location_id?: string | null
           notes?: string | null
+          public_id?: string
+          source?: string
           status?: string
           subtotal: number
           tax_total: number
@@ -341,18 +362,30 @@ export type Database = {
           whatsapp_sent_at?: string | null
           zoho_contact_id?: string | null
           zoho_estimate_id?: string | null
+          zoho_sync_attempts?: number
+          zoho_sync_error?: string | null
+          zoho_sync_status?: 'PENDING' | 'SYNCED' | 'FAILED'
         }
         Update: {
+          app_whatsapp_message_id?: string | null
+          app_whatsapp_sent?: boolean
+          cart_hash?: string | null
+          contact_location?: string | null
           contact_phone?: string
           converted_at?: string | null
           converted_to_salesorder_id?: number | null
           created_at?: string | null
           date?: string | null
-          estimate_number?: string
+          estimate_number?: string | null
+          estimate_url?: string | null
+          expires_at?: string | null
           expiry_date?: string | null
           id?: number
           line_items?: Json
+          location_id?: string | null
           notes?: string | null
+          public_id?: string
+          source?: string
           status?: string
           subtotal?: number
           tax_total?: number
@@ -362,6 +395,9 @@ export type Database = {
           whatsapp_sent_at?: string | null
           zoho_contact_id?: string | null
           zoho_estimate_id?: string | null
+          zoho_sync_attempts?: number
+          zoho_sync_error?: string | null
+          zoho_sync_status?: 'PENDING' | 'SYNCED' | 'FAILED'
         }
         Relationships: [
           {
@@ -800,7 +836,7 @@ export type Database = {
       unaccent: { Args: { "": string }; Returns: string }
     }
     Enums: {
-      [_ in never]: never
+      estimate_zoho_sync_status: 'PENDING' | 'SYNCED' | 'FAILED'
     }
     CompositeTypes: {
       [_ in never]: never

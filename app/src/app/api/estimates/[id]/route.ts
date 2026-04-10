@@ -7,14 +7,16 @@ import type { CartItem } from '@/types/catalog'
 interface EstimateRow {
   id: number
   public_id: string
-  estimate_number: string
+  estimate_number: string | null
   zoho_sync_status: string
+  status: string
   line_items: CartItem[]
   subtotal: number
   tax_total: number
   total: number
   created_at: string
   zoho_contact_id: string
+  estimate_url: string | null
 }
 
 export async function GET(
@@ -37,7 +39,9 @@ export async function GET(
   const supabase = createServiceClient()
   const { data, error } = await supabase
     .from('estimates')
-    .select('id, public_id, estimate_number, zoho_sync_status, line_items, subtotal, tax_total, total, created_at, zoho_contact_id')
+    .select(
+      'id, public_id, estimate_number, zoho_sync_status, status, line_items, subtotal, tax_total, total, created_at, zoho_contact_id, estimate_url'
+    )
     .eq('public_id', id)
     .maybeSingle()
 
@@ -57,6 +61,8 @@ export async function GET(
 
   return NextResponse.json({
     estimate_number: estimate.estimate_number,
+    estimate_url: estimate.estimate_url,
+    status: estimate.status,
     zoho_sync_status: estimate.zoho_sync_status,
     line_items: estimate.line_items,
     subtotal: estimate.subtotal,

@@ -137,8 +137,8 @@ async function handleUpsert(
 
   logger.info('PHONE', { estimate_id: estimateId, customer_id: estimate.customer_id ?? 'none', phone: contactPhone || '(empty)' })
 
-  // Field mapping follows the estimates table schema. zoho_sync_status is set to
-  // 'synced' because this row arrived directly from Zoho — no pending push needed.
+  // Field mapping follows the estimates table schema. zoho_sync_status is SYNCED
+  // because this row arrived directly from Zoho — no pending push needed.
   const estimateRow = {
     zoho_estimate_id:  estimateId,
     estimate_number:   estimate.estimate_number || `ZOHO-EST-${estimateId}`,
@@ -152,7 +152,7 @@ async function handleUpsert(
     tax_total:         dec(estimate.tax_total) ?? 0,
     total:             dec(estimate.total) ?? 0,
     notes:             estimate.notes || null,
-    zoho_sync_status:  'synced',
+    zoho_sync_status:  'SYNCED',
     updated_at:        new Date().toISOString(),
   }
 

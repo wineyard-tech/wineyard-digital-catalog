@@ -90,13 +90,25 @@ export interface OrderListItem {
   estimate_number?: string | null;
 }
 
+export interface EnquiryDuplicateRef {
+  public_id: string;
+  estimate_number: string | null;
+  estimate_url: string | null;
+  zoho_estimate_id: string | null;
+}
+
 export interface EnquiryResponse {
   success: boolean;
-  estimate_number: string;
-  estimate_id: string;       // public_id UUID — used for deep links
-  estimate_url?: string | null;  // Zoho public estimate URL — available immediately if Zoho returned it
+  /** Set after Zoho Books sync (or duplicate row). Null while PENDING. */
+  estimate_number?: string | null;
+  estimate_id: string;
+  estimate_url?: string | null;
   whatsapp_sent: boolean;
-  sync_pending?: boolean;    // true when Zoho sync failed but WhatsApp was still sent
+  /** True while row is PENDING Zoho creation */
+  sync_pending?: boolean;
+  zoho_sync_status?: string;
+  message?: string;
+  duplicate_of?: EnquiryDuplicateRef;
   error?: string;
 }
 

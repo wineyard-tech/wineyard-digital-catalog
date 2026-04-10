@@ -14,6 +14,7 @@ import {
   PRODUCT_IMAGE_W400,
   resolveProductThumbnailUrl,
 } from '@/lib/catalog/resolve-product-thumbnail-url'
+import { useEnquirySyncUpdates } from '@/hooks/use-enquiry-sync-updates'
 
 interface CartSheetProps {
   open: boolean
@@ -31,6 +32,8 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<EnquiryResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEnquirySyncUpdates(result, setResult)
 
   const gst = Math.round(subtotal * GST_RATE)
   const total = subtotal + gst
@@ -158,14 +161,36 @@ export default function CartSheet({ open, onClose }: CartSheetProps) {
           >
             <div style={{ fontSize: 56, marginBottom: 16 }}>✅</div>
             <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 700, color: '#1A1A2E' }}>
-              Quotation sent!
+              Enquiry received
             </h3>
-            <p style={{ margin: '0 0 4px', fontSize: 14, color: '#6B7280' }}>
-              {result.estimate_number}
+            <p style={{ margin: '0 0 8px', fontSize: 13, color: '#374151', lineHeight: 1.45, padding: '0 8px' }}>
+              {result.message ??
+                'Enquiry received. You will receive a WhatsApp confirmation and a call from our team in the next 1 hour.'}
             </p>
-            <p style={{ margin: '0 0 24px', fontSize: 13, color: '#6B7280' }}>
-              Check your WhatsApp — your quote is on its way.
-            </p>
+            {result.estimate_number ? (
+              <p style={{ margin: '0 0 4px', fontSize: 14, color: '#6B7280', fontWeight: 600 }}>
+                Quote #{result.estimate_number}
+              </p>
+            ) : null}
+            {result.sync_pending ? (
+              <p style={{ margin: '0 0 8px', fontSize: 11, color: '#D97706' }}>Syncing formal quote…</p>
+            ) : null}
+            {result.estimate_url ? (
+              <a
+                href={result.estimate_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block',
+                  marginBottom: 12,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#1D4ED8',
+                }}
+              >
+                Open estimate ↗
+              </a>
+            ) : null}
             <button
               onClick={handleClose}
               style={{
