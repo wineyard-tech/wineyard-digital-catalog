@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     const qtySum = lineItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0)
     return {
       id: row.public_id as string,
-      doc_number: row.estimate_number,
+      doc_number: row.estimate_number ?? 'Pending',
       date: row.date ?? row.created_at?.slice(0, 10) ?? '',
       total: row.total,
       item_count: qtySum || lineItems.length,

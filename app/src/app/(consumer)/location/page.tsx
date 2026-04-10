@@ -6,6 +6,11 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MapPin, Navigation, Search, X } from 'lucide-react'
 import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
+import {
+  buildWlCookiePayload,
+  locationDedupKey,
+  parseWlCookieToLocations,
+} from '@/lib/catalog/wl-cookie'
 
 const COOKIE_NAME = 'wl'
 const COOKIE_MAX_AGE = 24 * 60 * 60 // 1 day
@@ -39,7 +44,7 @@ interface NearestLocationApiResponse {
 
 type DetectState = 'idle' | 'detecting' | 'denied'
 
-function readLocationCookie(): LocationData | null {
+function readWlCookieRaw(): unknown | null {
   if (typeof document === 'undefined') return null
   try {
     const match = document.cookie
@@ -54,7 +59,8 @@ function readLocationCookie(): LocationData | null {
 }
 
 function writeLocationCookie(data: LocationData) {
-  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(data))}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=lax`
+  const payload = buildWlCookiePayload(data, readWlCookieRaw())
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(payload))}; max-age=${COOKIE_MAX_AGE}; path=/; samesite=lax`
 }
 
 /**
@@ -85,7 +91,7 @@ function buildLocationData(
 
 export default function LocationPage() {
   const router = useRouter()
-  const [savedLocation, setSavedLocation] = useState<LocationData | null>(null)
+  const [savedLocations, setSavedLocations] = useState<LocationData[]>([])
   const [detectState, setDetectState] = useState<DetectState>('idle')
   const [fromCatalog, setFromCatalog] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -103,7 +109,8 @@ export default function LocationPage() {
   useEffect(() => {
     mountedRef.current = true
     setFromCatalog(new URLSearchParams(window.location.search).get('from') === 'catalog')
-    setSavedLocation(readLocationCookie())
+    const raw = readWlCookieRaw()
+    setSavedLocations(parseWlCookieToLocations(raw) as LocationData[])
     searchInputRef.current?.focus()
     return () => {
       mountedRef.current = false
@@ -421,37 +428,40 @@ export default function LocationPage() {
             </div>
           </button>
 
-          {/* Recently saved location */}
-          {savedLocation && (
+          {/* Recently saved locations (newest first, up to 5) */}
+          {savedLocations.length > 0 && (
             <>
               <p style={{ margin: '14px 0 6px', fontSize: 11, fontWeight: 700, color: '#94A3B8', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 Recently saved
               </p>
-              <button
-                onClick={() => confirmAndNavigate(savedLocation)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: 10,
-                  padding: '13px 0',
-                  background: 'none',
-                  border: 'none',
-                  borderBottom: '1px solid #F1F5F9',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <MapPin size={16} color="#059669" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
-                <div>
-                  <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 600, color: '#0F172A' }}>
-                    {savedLocation.name || savedLocation.area || savedLocation.city}
-                  </p>
-                  <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>
-                    {savedLocation.address}
-                  </p>
-                </div>
-              </button>
+              {savedLocations.map((loc, i) => (
+                <button
+                  key={locationDedupKey(loc)}
+                  onClick={() => confirmAndNavigate(loc)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    padding: '13px 0',
+                    background: 'none',
+                    border: 'none',
+                    borderBottom: i < savedLocations.length - 1 ? '1px solid #F1F5F9' : 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <MapPin size={16} color="#059669" style={{ marginTop: 2, flexShrink: 0 }} aria-hidden="true" />
+                  <div>
+                    <p style={{ margin: '0 0 2px', fontSize: 15, fontWeight: 600, color: '#0F172A' }}>
+                      {loc.name || loc.area || loc.city}
+                    </p>
+                    <p style={{ margin: 0, fontSize: 12, color: '#64748B' }}>
+                      {loc.address}
+                    </p>
+                  </div>
+                </button>
+              ))}
             </>
           )}
         </div>

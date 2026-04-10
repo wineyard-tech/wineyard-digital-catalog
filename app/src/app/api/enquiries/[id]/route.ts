@@ -154,7 +154,7 @@ export async function GET(
 
   const detail: EnquiryDetail = {
     id: estimate.public_id as string,
-    doc_number: estimate.estimate_number,
+    doc_number: estimate.estimate_number ?? 'Pending',
     date: estimate.date ?? estimate.created_at?.slice(0, 10) ?? '',
     // PostgREST returns DECIMAL columns as strings — coerce to number for fmt()
     total: subtotalNum,   // Total = Subtotal; tax is decorative, not added to total
