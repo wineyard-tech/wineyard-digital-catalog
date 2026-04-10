@@ -4,6 +4,7 @@ import { AuthProvider } from '../contexts/AuthContext'
 import PostHogProvider from '../components/analytics/PostHogProvider'
 import { CartProvider } from '../components/cart/CartContext'
 import { PricingProvider } from '../contexts/PricingContext'
+import { Analytics } from '@vercel/analytics/next'
 
 export const metadata: Metadata = {
   title: 'Wine Yard Catalog',
@@ -45,6 +46,7 @@ export default function RootLayout({
             </PricingProvider>
           </PostHogProvider>
         </AuthProvider>
+        <Analytics />
       </body>
     </html>
   )
