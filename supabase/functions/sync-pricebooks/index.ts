@@ -1,13 +1,9 @@
 // sync-pricebooks Edge Function
-// Incremental sync: last_modified_time = T−24h5m (getLastModifiedFilter).
+// Same Zoho flow as initial_sync(pricebooks): full GET /pricebooks list (paginated list only),
+// batch upsert pricebook_catalog, then one GET /pricebooks/{id} per book (no per-book line-item
+// pagination). Missing `items` rows are filled via GET /items/{id} before pricebook_items upsert.
+//
 // Daily ~5:05 AM IST via pg_cron (scripts/deploy-cron.sql), or triggered manually.
-//
-// Consistent with sync-items and sync-contacts: uses getLastModifiedFilter() so only
-// records changed in the last ~24 hours are fetched, preventing full-scan timeouts.
-//
-// Failsafe: if a pricebook references a zoho_item_id not yet in `items`,
-// the real item is fetched from Zoho (GET /items/{id}) and inserted before the
-// pricebook_item row is created — no stubs, no FK violations.
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -15,15 +11,13 @@ import { getZohoToken, fetchAllZohoPages, zohoGet, getLastModifiedFilter } from 
 
 const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
-/** Coerce Zoho decimal strings/empty to number | null */
-function dec(val: any): number | null {
+function dec(val: unknown): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : n
 }
 
-/** Coerce Zoho decimal strings/empty to integer | null */
-function int(val: any): number | null {
+function int(val: unknown): number | null {
   if (val === '' || val === null || val === undefined) return null
   const n = Number(val)
   return isNaN(n) ? null : Math.round(n)
@@ -42,97 +36,91 @@ serve(async (req) => {
   try {
     const token = await getZohoToken(supabase)
 
-    // ── Step 1: Fetch pricebooks modified in the last ~24 hours ──────────────
     const lastModified = getLastModifiedFilter()
     console.log(`Fetching pricebooks modified since ${lastModified}`)
 
-    const pricebookList = await fetchAllZohoPages<any>(
-      '/pricebooks',
-      token,
-      ORG_ID,
-      'pricebooks',
-      { last_modified_time: lastModified }
-    )
-    console.log(`Found ${pricebookList.length} modified pricebook(s) in Zoho`)
+    const zohoBooks = await fetchAllZohoPages<any>('/pricebooks', token, ORG_ID, 'pricebooks', { last_modified_time: lastModified })
+    console.log(`[sync-pricebooks] found ${zohoBooks.length} pricebook(s) in Zoho`)
 
-    if (pricebookList.length === 0) {
-      return new Response(JSON.stringify({
-        pricebooks_synced: 0,
-        item_prices_upserted: 0,
-        missing_items_fetched: 0,
-        errors_count: 0,
-        errors: [],
-        synced_at: new Date().toISOString(),
-      }), { headers: { 'Content-Type': 'application/json' } })
+    if (zohoBooks.length === 0) {
+      return new Response(
+        JSON.stringify({
+          pricebooks_synced: 0,
+          item_prices_upserted: 0,
+          missing_items_fetched: 0,
+          errors_count: 0,
+          errors: [],
+          synced_at: new Date().toISOString(),
+        }),
+        { headers: { 'Content-Type': 'application/json' } }
+      )
     }
 
-    let pricebooksUpserted = 0
+    const catalogRows = zohoBooks.map((pb: any) => ({
+      zoho_pricebook_id: pb.pricebook_id,
+      pricebook_name: pb.pricebook_name || pb.name || `Pricebook ${pb.pricebook_id}`,
+      currency_id: pb.currency_id || 'INR',
+      is_active: (pb.status ?? 'active') === 'active',
+      synced_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }))
+
+    const { error: catErr } = await supabase
+      .from('pricebook_catalog')
+      .upsert(catalogRows, { onConflict: 'zoho_pricebook_id', ignoreDuplicates: false })
+
+    if (catErr) {
+      return new Response(JSON.stringify({ error: `catalog upsert: ${catErr.message}` }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     let itemPricesUpserted = 0
     let missingItemsFetched = 0
     const errors: string[] = []
 
-    for (const pb of pricebookList) {
-      const pricebookId: string = pb.pricebook_id
-      const pricebookName: string = pb.pricebook_name ?? pb.name ?? `Pricebook ${pricebookId}`
+    for (const pb of zohoBooks) {
+      const pbName = pb.pricebook_name ?? pb.name ?? pb.pricebook_id
 
-      // ── Step 2: Upsert pricebook metadata ───────────────────────────────────
-      const { error: catalogErr } = await supabase
-        .from('pricebook_catalog')
-        .upsert({
-          zoho_pricebook_id: pricebookId,
-          pricebook_name: pricebookName,
-          currency_id: pb.currency_id || 'INR',
-          is_active: (pb.status ?? 'active') === 'active',
-          synced_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'zoho_pricebook_id' })
-
-      if (catalogErr) {
-        errors.push(`Pricebook ${pricebookId} catalog upsert: ${catalogErr.message}`)
+      let detail: any
+      try {
+        detail = await zohoGet(`/pricebooks/${pb.pricebook_id}`, token, ORG_ID)
+      } catch (e) {
+        errors.push(`Pricebook ${pb.pricebook_id} detail: ${String(e)}`)
         continue
       }
-      pricebooksUpserted++
 
-      // ── Step 3: Fetch all pricebook_items pages for this pricebook ────────────
-      const pbItems: Array<{ item_id: string; pricebook_rate?: number; rate?: number }> = []
-      let pbPage = 1
-      let pbFailed = false
-      while (true) {
-        let pbDetail: any
-        try {
-          pbDetail = await zohoGet(`/pricebooks/${pricebookId}`, token, ORG_ID, { page: pbPage, per_page: 200 })
-        } catch (e) {
-          errors.push(`Pricebook ${pricebookId} detail fetch p${pbPage}: ${String(e)}`)
-          pbFailed = true
-          break
-        }
-        const pageItems: Array<{ item_id: string; pricebook_rate?: number; rate?: number }> =
-          pbDetail?.pricebook?.pricebook_items ?? []
-        pbItems.push(...pageItems)
-        // Dual-condition: Zoho's has_more_page can be wrong when items list is filtered.
-        // Only stop when both has_more_page is false AND we got a partial page.
-        if (pageItems.length === 0) break
-        if (!pbDetail?.page_context?.has_more_page && pageItems.length < 200) break
-        pbPage++
+      if (detail.code !== 0) {
+        errors.push(`Pricebook ${pbName}: ${detail.message}`)
+        continue
       }
-      if (pbFailed) continue
-      if (pbItems.length === 0) continue
 
-      // ── Step 4: Failsafe — fetch any referenced items missing from `items` ────
-      // pricebook_items.zoho_item_id has an FK to items — fetch real item data from
-      // Zoho rather than inserting stubs so the catalog has correct data immediately.
-      const itemIds = pbItems.map(i => i.item_id)
+      const priceItems: any[] = detail.pricebook?.pricebook_items ?? []
+      if (priceItems.length === 0) continue
 
+      const itemRows = priceItems
+        .map((pi: any) => ({
+          zoho_pricebook_id: pb.pricebook_id,
+          zoho_item_id: pi.item_id,
+          custom_rate: dec(pi.pricebook_rate ?? pi.rate) ?? 0,
+          updated_at: new Date().toISOString(),
+        }))
+        .filter((r: any) => r.zoho_item_id)
+
+      if (itemRows.length === 0) continue
+
+      const pbItemIds = itemRows.map((r: any) => r.zoho_item_id)
       const { data: existingItems } = await supabase
         .from('items')
         .select('zoho_item_id')
-        .in('zoho_item_id', itemIds)
+        .in('zoho_item_id', pbItemIds)
 
       const existingSet = new Set((existingItems ?? []).map((r: any) => r.zoho_item_id))
-      const missingIds = itemIds.filter(id => !existingSet.has(id))
+      const missingIds = pbItemIds.filter((id: string) => !existingSet.has(id))
 
       if (missingIds.length > 0) {
-        console.log(`Fetching ${missingIds.length} missing item(s) from Zoho for pricebook ${pricebookId}`)
+        console.log(`[sync-pricebooks] ${pbName}: fetching ${missingIds.length} missing item(s) from Zoho`)
         for (const itemId of missingIds) {
           try {
             const itemDetail = await zohoGet(`/items/${itemId}`, token, ORG_ID)
@@ -140,38 +128,41 @@ serve(async (req) => {
               const item = itemDetail.item
               const { error: itemErr } = await supabase
                 .from('items')
-                .upsert({
-                  zoho_item_id:           item.item_id,
-                  item_name:              item.name,
-                  sku:                    item.sku?.trim() || `ITEM-${item.item_id}`,
-                  category_id:            item.category_id || null,
-                  category_name:          item.category_name || null,
-                  brand:                  item.brand?.trim() || null,
-                  manufacturer:           item.manufacturer_name || null,
-                  description:            item.description || null,
-                  hsn_or_sac:             item.hsn_or_sac || null,
-                  unit:                   item.unit || 'pcs',
-                  status:                 item.status ?? 'active',
-                  item_type:              item.item_type || 'inventory',
-                  product_type:           item.product_type || 'goods',
-                  base_rate:              dec(item.rate),
-                  purchase_rate:          dec(item.purchase_rate),
-                  is_taxable:             item.is_taxable ?? true,
-                  tax_id:                 item.tax_id || null,
-                  tax_name:               item.tax_name || null,
-                  tax_percentage:         dec(item.tax_percentage) ?? 18.0,
-                  track_inventory:        item.track_inventory ?? false,
-                  available_stock:        int(item.available_stock),
-                  actual_available_stock: int(item.actual_available_stock),
-                  reorder_level:          int(item.reorder_level),
-                  upc:                    item.upc || null,
-                  ean:                    item.ean || null,
-                  part_number:            item.part_number || null,
-                  custom_fields:          item.custom_fields ?? {},
-                  created_time:           item.created_time || null,
-                  last_modified_time:     item.last_modified_time || null,
-                  updated_at:             new Date().toISOString(),
-                }, { onConflict: 'zoho_item_id' })
+                .upsert(
+                  {
+                    zoho_item_id: item.item_id,
+                    item_name: item.name,
+                    sku: item.sku?.trim() || `ITEM-${item.item_id}`,
+                    category_id: item.category_id || null,
+                    category_name: item.category_name || null,
+                    brand: item.brand?.trim() || null,
+                    manufacturer: item.manufacturer_name || null,
+                    description: item.description || null,
+                    hsn_or_sac: item.hsn_or_sac || null,
+                    unit: item.unit || 'pcs',
+                    status: item.status ?? 'active',
+                    item_type: item.item_type || 'inventory',
+                    product_type: item.product_type || 'goods',
+                    base_rate: dec(item.rate),
+                    purchase_rate: dec(item.purchase_rate),
+                    is_taxable: item.is_taxable ?? true,
+                    tax_id: item.tax_id || null,
+                    tax_name: item.tax_name || null,
+                    tax_percentage: dec(item.tax_percentage) ?? 18.0,
+                    track_inventory: item.track_inventory ?? false,
+                    available_stock: int(item.available_stock),
+                    actual_available_stock: int(item.actual_available_stock),
+                    reorder_level: int(item.reorder_level),
+                    upc: item.upc || null,
+                    ean: item.ean || null,
+                    part_number: item.part_number || null,
+                    custom_fields: item.custom_fields ?? {},
+                    created_time: item.created_time || null,
+                    last_modified_time: item.last_modified_time || null,
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: 'zoho_item_id' }
+                )
               if (!itemErr) {
                 existingSet.add(item.item_id)
                 missingItemsFetched++
@@ -179,7 +170,7 @@ serve(async (req) => {
                 errors.push(`Fetch item ${itemId}: ${itemErr.message}`)
               }
             } else {
-              errors.push(`Item ${itemId} not found in Zoho (pricebook ${pricebookId}): ${itemDetail.message}`)
+              errors.push(`Item ${itemId} not found in Zoho (${pbName}): ${itemDetail.message}`)
             }
           } catch (e) {
             errors.push(`Fetch item ${itemId}: ${String(e)}`)
@@ -187,51 +178,40 @@ serve(async (req) => {
         }
       }
 
-      // ── Step 5: Upsert item prices — only for items that now exist ────────────
-      const priceRows = pbItems
-        .filter(pi => existingSet.has(pi.item_id))
-        .map(pi => ({
-          zoho_pricebook_id: pricebookId,
-          zoho_item_id: pi.item_id,
-          custom_rate: dec((pi as any).pricebook_rate ?? pi.rate) ?? 0,
-          updated_at: new Date().toISOString(),
-        }))
+      const safeItemRows = itemRows.filter((r: any) => existingSet.has(r.zoho_item_id))
+      if (safeItemRows.length === 0) continue
 
-      for (let i = 0; i < priceRows.length; i += 200) {
-        const batch = priceRows.slice(i, i + 200)
-        const { error: priceErr } = await supabase
-          .from('pricebook_items')
-          .upsert(batch, { onConflict: 'zoho_pricebook_id,zoho_item_id' })
+      const { error: batchErr } = await supabase
+        .from('pricebook_items')
+        .upsert(safeItemRows, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
 
-        if (priceErr) {
-          // Retry row-by-row to isolate failures
-          for (const row of batch) {
-            const { error: rowErr } = await supabase
-              .from('pricebook_items')
-              .upsert(row, { onConflict: 'zoho_pricebook_id,zoho_item_id' })
-            if (rowErr) {
-              errors.push(`Price row ${pricebookId}/${row.zoho_item_id}: ${rowErr.message}`)
-            } else {
-              itemPricesUpserted++
-            }
+      if (batchErr) {
+        errors.push(`Batch upsert ${pbName}: ${batchErr.message}`)
+        for (const row of safeItemRows) {
+          const { error: rowErr } = await supabase
+            .from('pricebook_items')
+            .upsert(row, { onConflict: 'zoho_pricebook_id,zoho_item_id', ignoreDuplicates: false })
+          if (rowErr) {
+            errors.push(`Price row ${pb.pricebook_id}/${row.zoho_item_id}: ${rowErr.message}`)
+          } else {
+            itemPricesUpserted++
           }
-        } else {
-          itemPricesUpserted += batch.length
         }
+      } else {
+        itemPricesUpserted += safeItemRows.length
       }
     }
 
     const summary = {
-      pricebooks_synced: pricebooksUpserted,
+      pricebooks_synced: catalogRows.length,
       item_prices_upserted: itemPricesUpserted,
       missing_items_fetched: missingItemsFetched,
-      last_modified_since: lastModified,
       errors_count: errors.length,
-      errors: errors.slice(0, 20), // cap log size
+      errors: errors.slice(0, 20),
       synced_at: new Date().toISOString(),
     }
 
-    console.log('sync-pricebooks complete:', summary)
+    console.log('[sync-pricebooks] complete:', summary)
     return new Response(JSON.stringify(summary), {
       headers: { 'Content-Type': 'application/json' },
     })

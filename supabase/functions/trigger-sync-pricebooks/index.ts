@@ -10,7 +10,6 @@
 //     -H "x-zoho-webhook-token: $ZOHO_WEBHOOK_TOKEN" -H "Content-Type: application/json" -d '{}'
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { EdgeRuntime } from 'jsr:@supabase/functions-js@2/edge-runtime'
 import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
 
 const ENV_TOKEN = 'ZOHO_WEBHOOK_TOKEN'
