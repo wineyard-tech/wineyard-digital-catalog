@@ -70,9 +70,9 @@ export default function CartPage() {
           setWarehouseName(null)
           return
         }
-        const data = JSON.parse(decodeURIComponent(match.slice(3))) as Record<string, unknown>
-        setDeliveryArea(getWlHeaderLabelFromParsed(data))
-        setWarehouseName(parseWlWarehouseName(data))
+        const parsed = JSON.parse(decodeURIComponent(match.slice(3)))
+        setDeliveryArea(getWlHeaderLabelFromParsed(parsed))
+        setWarehouseName(parseWlWarehouseName(parsed))
       } catch {
         /* malformed cookie — ignore */
       }
@@ -298,7 +298,7 @@ export default function CartPage() {
             rel="noopener noreferrer"
             style={{ display: 'block', marginBottom: 12, width: '100%', maxWidth: 280, background: '#EFF6FF', color: '#1D4ED8', border: '1.5px solid #BFDBFE', borderRadius: 10, padding: '12px 32px', fontSize: 14, fontWeight: 600, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
           >
-            Open Estimate ↗
+            Open Estimate PDF ↗
           </a>
         )}
         <button

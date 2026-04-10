@@ -11,6 +11,7 @@ import { buildServerEnquiryLineItems } from '@/lib/enquiry-pricing'
 import { getPostHogServer } from '@/lib/posthog-node'
 import { customerFacingName } from '@/lib/auth/account-display'
 import { parseWlFiniteCoord, parseWlWarehouseZohoIdValue } from '@/lib/catalog/read-wl-enquiry-fields'
+import { getActiveWlCookieRecord } from '@/lib/catalog/wl-cookie'
 import {
   filterLocationsExcludingDormant,
   getDormantZohoLocationIdSet,
@@ -288,8 +289,15 @@ export async function POST(request: NextRequest) {
   try {
     const wlRaw = request.cookies.get('wl')?.value
     if (wlRaw) {
-      const wlData = JSON.parse(decodeURIComponent(wlRaw))
-      contactLocation = wlData?.name ?? wlData?.area ?? wlData?.city ?? null
+      const wlParsed = JSON.parse(decodeURIComponent(wlRaw))
+      const wlData = getActiveWlCookieRecord(wlParsed)
+      if (wlData) {
+        contactLocation =
+          (typeof wlData.name === 'string' ? wlData.name : undefined) ??
+          (typeof wlData.area === 'string' ? wlData.area : undefined) ??
+          (typeof wlData.city === 'string' ? wlData.city : undefined) ??
+          null
+      }
     }
   } catch {
     /* malformed cookie */

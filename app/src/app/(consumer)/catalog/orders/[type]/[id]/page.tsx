@@ -219,7 +219,7 @@ export default function TransactionDetailPage({
             fontSize: 15, fontWeight: 700, color: '#FFFFFF', cursor: 'pointer',
           }}
         >
-          Reorder Entire Order
+          Reorder
         </button>
       </div>
 
