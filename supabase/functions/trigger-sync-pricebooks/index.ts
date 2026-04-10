@@ -3,17 +3,17 @@
 // via HTTP (service role) so Zoho automations do not hit 502 on long sync runs.
 //
 // Zoho URL: POST https://<PROJECT_REF>.supabase.co/functions/v1/trigger-sync-pricebooks
-// Headers: x-zoho-webhook-token: <ZOHO_WEBHOOK_TOKEN_PRICEBOOKS_SYNC>
+// Headers: x-zoho-webhook-token: <ZOHO_WEBHOOK_TOKEN>
 //
 // Local: supabase functions serve — then
 //   curl -s -X POST http://127.0.0.1:54321/functions/v1/trigger-sync-pricebooks \
-//     -H "x-zoho-webhook-token: $ZOHO_WEBHOOK_TOKEN_PRICEBOOKS_SYNC" -H "Content-Type: application/json" -d '{}'
+//     -H "x-zoho-webhook-token: $ZOHO_WEBHOOK_TOKEN" -H "Content-Type: application/json" -d '{}'
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { EdgeRuntime } from 'jsr:@supabase/functions-js@2/edge-runtime'
 import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
 
-const ENV_TOKEN = 'ZOHO_WEBHOOK_TOKEN_PRICEBOOKS_SYNC'
+const ENV_TOKEN = 'ZOHO_WEBHOOK_TOKEN'
 
 function runSyncPricebooks(): Promise<void> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
