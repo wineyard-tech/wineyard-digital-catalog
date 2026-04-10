@@ -1,23 +1,16 @@
--- deploy-cron.sql
--- Run in Supabase SQL Editor after Edge Functions are deployed.
+-- Canonical pg_cron definitions for Zoho syncs + recommendation edge functions.
+-- This file documents the intended schedules; apply by running scripts/deploy-cron.sql
+-- in the SQL editor with <PROJECT_REF> and <SERVICE_ROLE_KEY> replaced.
 --
--- Prerequisites:
---   1. Extensions: pg_cron + pg_net (Dashboard → Database → Extensions)
---   2. Replace <PROJECT_REF> and <SERVICE_ROLE_KEY> below (or use find/replace in editor)
+-- Daily ~5:00 AM IST (staggered): sync-items, sync-pricebooks, sync-contacts,
+--   sync-invoices, sync-estimates — incremental window = T−24h5m (getLastModifiedFilter).
+-- Weekly Sunday ~6:00 AM IST (staggered): refresh-product-popularity,
+--   compute-product-associations, rebuild-customer-profiles.
+-- session-cleanup: daily 03:00 AM IST via cleanup_expired_sessions() RPC.
 --
--- Schedules (pg_cron runs in UTC; targets are Asia/Kolkata / IST):
---   Daily ~5:00 AM IST — Zoho incremental syncs (staggered 5 min; last_modified_time = T−24h5m in code)
---     sync-items → sync-pricebooks → sync-contacts → sync-invoices → sync-estimates
---   Weekly Sunday ~6:00 AM IST — recommendations (staggered 5 min)
---     refresh-product-popularity → compute-product-associations → rebuild-customer-profiles
---   session-cleanup — daily 3:00 AM IST via DB RPC (unchanged from 007_cron template)
---
--- Sunday 6:00 AM IST = Saturday 23:30 UTC → weekly cron uses DOW 6 (Saturday UTC).
---
--- Verify: SELECT jobid, jobname, schedule, active FROM cron.job ORDER BY jobname;
--- Remove one job: SELECT cron.unschedule('job-name');
+-- pg_cron uses UTC. Sunday 05:00 IST = Saturday 23:30 UTC → weekly jobs use DOW 6.
 
--- ── Idempotent: drop managed jobs by id (safe if job missing) ─────────────────
+/*
 SELECT cron.unschedule(jobid)
 FROM cron.job
 WHERE jobname IN (
@@ -32,12 +25,9 @@ WHERE jobname IN (
   'session-cleanup'
 );
 
--- ── session-cleanup: daily 03:00 AM IST (21:30 UTC) — direct RPC ──────────────
 SELECT cron.schedule('session-cleanup', '30 21 * * *', $$
   SELECT cleanup_expired_sessions()
 $$);
-
--- ── Daily Zoho syncs: 5:00–5:20 AM IST (23:30–23:50 UTC) ─────────────────────
 
 SELECT cron.schedule('sync-items', '30 23 * * *', $$
   SELECT net.http_post(
@@ -74,8 +64,6 @@ SELECT cron.schedule('sync-estimates', '50 23 * * *', $$
     body    := '{}'::jsonb)
 $$);
 
--- ── Weekly recommendations: Sunday 6:00–6:10 AM IST (Sat 23:30–23:40 UTC) ────
-
 SELECT cron.schedule('refresh-product-popularity', '30 0 * * 6', $$
   SELECT net.http_post(
     url     := 'https://<PROJECT_REF>.supabase.co/functions/v1/refresh-product-popularity',
@@ -96,3 +84,4 @@ SELECT cron.schedule('rebuild-customer-profiles', '40 0 * * 6', $$
     headers := '{"Authorization":"Bearer <SERVICE_ROLE_KEY>","Content-Type":"application/json"}'::jsonb,
     body    := '{}'::jsonb)
 $$);
+*/

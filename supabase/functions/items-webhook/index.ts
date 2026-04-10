@@ -16,8 +16,11 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
 import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
+import { getZohoToken, zohoGet } from '../_shared/zoho-client.ts'
 
 const logger = makeLogger('[items-webhook]')
+
+const ORG_ID = Deno.env.get('ZOHO_ORG_ID')!
 
 // Fields watched for delta logging — tracks the changes that matter most
 // operationally (pricing, stock, status).
@@ -34,6 +37,8 @@ interface ZohoWarehouse {
   warehouse_id: string
   warehouse_name: string
   status?: string
+  /** Zoho Books item detail uses this; some payloads only send is_primary. */
+  is_primary_warehouse?: boolean
   is_primary?: boolean
   warehouse_stock_on_hand?: number | ''
   warehouse_available_stock?: number | ''
@@ -225,56 +230,81 @@ async function handleUpsert(
     throw itemErr
   }
 
-  // ── 6. Sync warehouse locations ────────────────────────────────────────────
-  // Delete-then-insert so that removing a warehouse is correctly reflected.
-  const warehouses: ZohoWarehouse[] = item.warehouses ?? []
-
-  const { error: delErr } = await supabase
-    .from('item_locations')
-    .delete()
-    .eq('zoho_item_id', itemId)
-
-  if (delErr) {
-    logger.warn('LOCATIONS_DEL_WARN', { item_id: itemId, err: delErr.message })
-  }
-
-  const locationRows = warehouses
-    .filter((w) => w.warehouse_id)
-    .map((w) => ({
-      zoho_item_id:                  itemId,
-      zoho_location_id:              w.warehouse_id,
-      location_name:                 w.warehouse_name,
-      location_status:               w.status ?? 'active',
-      is_primary:                    w.is_primary ?? false,
-      stock_on_hand:                 int(w.warehouse_stock_on_hand) ?? 0,
-      available_stock:               int(w.warehouse_available_stock) ?? 0,
-      actual_available_stock:        int(w.warehouse_actual_available_stock) ?? 0,
-      updated_at:                    new Date().toISOString(),
-    }))
-
-  if (locationRows.length > 0) {
-    const { error: locErr } = await supabase
-      .from('item_locations')
-      .insert(locationRows)
-
-    if (locErr) {
-      logger.warn('LOCATIONS_INS_WARN', { item_id: itemId, count: locationRows.length, err: locErr.message })
-      await logError(supabase, {
-        event_type: eventType,
-        zoho_entity_id: itemId,
-        error_message: `item_locations insert failed: ${locErr.message}`,
-        payload: rawPayload,
-      })
+  // ── 6. Sync warehouse locations (same fields as initial_sync item_locations) ─
+  // Webhooks often omit warehouses[]; GET /items/{id} returns full per-warehouse stock.
+  // If warehouses is undefined, fetch detail. If [] is sent explicitly, trust it (clear rows).
+  let warehouses: ZohoWarehouse[] | null = null
+  if (item.warehouses === undefined) {
+    try {
+      const token = await getZohoToken(supabase)
+      const detail = await zohoGet(`/items/${itemId}`, token, ORG_ID)
+      const dItem = detail?.item as ZohoItemPayload | undefined
+      warehouses = Array.isArray(dItem?.warehouses) ? dItem!.warehouses! : []
+    } catch (e) {
+      logger.warn('ITEM_DETAIL_FAIL', { item_id: itemId, err: String(e) })
+      warehouses = null
     }
+  } else {
+    warehouses = item.warehouses
   }
 
-  logger.info('DONE', {
-    item_id: itemId,
-    event: eventType,
-    op,
-    changed: changedCount,
-    warehouses: locationRows.length,
-  })
+  if (warehouses !== null) {
+    // Delete-then-insert so that removing a warehouse is correctly reflected.
+    const { error: delErr } = await supabase
+      .from('item_locations')
+      .delete()
+      .eq('zoho_item_id', itemId)
+
+    if (delErr) {
+      logger.warn('LOCATIONS_DEL_WARN', { item_id: itemId, err: delErr.message })
+    }
+
+    const locationRows = warehouses
+      .filter((w) => w.warehouse_id)
+      .map((w) => ({
+        zoho_item_id:           itemId,
+        zoho_location_id:       w.warehouse_id,
+        location_name:          w.warehouse_name || '',
+        location_status:        w.status ?? 'active',
+        is_primary:             w.is_primary_warehouse ?? w.is_primary ?? false,
+        stock_on_hand:          int(w.warehouse_stock_on_hand),
+        available_stock:        int(w.warehouse_available_stock),
+        actual_available_stock: int(w.warehouse_actual_available_stock),
+        updated_at:             new Date().toISOString(),
+      }))
+
+    if (locationRows.length > 0) {
+      const { error: locErr } = await supabase
+        .from('item_locations')
+        .insert(locationRows)
+
+      if (locErr) {
+        logger.warn('LOCATIONS_INS_WARN', { item_id: itemId, count: locationRows.length, err: locErr.message })
+        await logError(supabase, {
+          event_type: eventType,
+          zoho_entity_id: itemId,
+          error_message: `item_locations insert failed: ${locErr.message}`,
+          payload: rawPayload,
+        })
+      }
+    }
+
+    logger.info('DONE', {
+      item_id: itemId,
+      event: eventType,
+      op,
+      changed: changedCount,
+      warehouses: locationRows.length,
+    })
+  } else {
+    logger.info('DONE', {
+      item_id: itemId,
+      event: eventType,
+      op,
+      changed: changedCount,
+      warehouses: 'skipped_no_detail',
+    })
+  }
   return { op, changed, changedCount }
 }
 

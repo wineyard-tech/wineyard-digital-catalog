@@ -1,28 +1,28 @@
 // Shared Zoho Books API client for Edge Functions (Deno runtime)
 // Handles token refresh with DB caching and paginated fetches
 
+const MS_24H5M = 24 * 60 * 60 * 1000 + 5 * 60 * 1000
+
 /**
- * Returns the last_modified_time filter string for incremental Zoho syncs.
- * Computes yesterday at 03:55 AM IST — a 5-minute safety buffer before the
- * 04:00 AM IST daily cron — so any records updated on the boundary minute
- * of the previous run are never silently dropped.
+ * last_modified_time for incremental Zoho syncs: exactly 24 hours and 5 minutes
+ * before invocation (wall-clock instant), formatted with +0530 for Zoho Books India.
+ * The 5-minute overlap avoids missing records updated on the boundary.
  *
- * Format: "YYYY-MM-DDTHH:mm:ss+0530" as required by Zoho Books India region.
+ * Format: "YYYY-MM-DDTHH:mm:ss+0530"
  */
 export function getLastModifiedFilter(): string {
-  // Compute current date in IST (UTC+5:30) using manual offset arithmetic
+  const cutoffInstant = Date.now() - MS_24H5M
   const istOffsetMs = 5.5 * 60 * 60 * 1000
-  const nowIST = new Date(Date.now() + istOffsetMs)
+  const d = new Date(cutoffInstant + istOffsetMs)
 
-  // Roll back to yesterday in IST calendar
-  nowIST.setUTCDate(nowIST.getUTCDate() - 1)
+  const year = d.getUTCFullYear()
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(d.getUTCDate()).padStart(2, '0')
+  const hour = String(d.getUTCHours()).padStart(2, '0')
+  const minute = String(d.getUTCMinutes()).padStart(2, '0')
+  const second = String(d.getUTCSeconds()).padStart(2, '0')
 
-  const year  = nowIST.getUTCFullYear()
-  const month = String(nowIST.getUTCMonth() + 1).padStart(2, '0')
-  const day   = String(nowIST.getUTCDate()).padStart(2, '0')
-
-  // Fixed time: 03:55 AM IST with explicit IST offset required by Zoho India API
-  return `${year}-${month}-${day}T03:55:00+0530`
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}+0530`
 }
 
 import { SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'

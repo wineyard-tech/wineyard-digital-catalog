@@ -375,6 +375,10 @@ verify_jwt = false
 [functions.items-webhook]
 verify_jwt = false
 
+# Zoho automation → fast 202; invokes sync-pricebooks in background (EdgeRuntime.waitUntil)
+[functions.trigger-sync-pricebooks]
+verify_jwt = false
+
 # Database Webhook (estimates INSERT → catalog-app) — no Supabase JWT; optional SYNC_ESTIMATE_WEBHOOK_SECRET + x-sync-estimate-secret header
 [functions.sync-estimate-to-zoho]
 verify_jwt = false

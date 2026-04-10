@@ -1,5 +1,5 @@
 // compute-product-associations Edge Function
-// Runs weekly (Sunday 8pm IST) to compute market-basket analysis across 3 document types.
+// Weekly Sunday ~6:05 AM IST via pg_cron — market-basket analysis across 3 document types.
 //
 // Document hierarchy (most → least authoritative):
 //   invoice (3) > sales_order (2) > estimate (1)

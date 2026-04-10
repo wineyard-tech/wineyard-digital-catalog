@@ -1,6 +1,6 @@
 // sync-estimates Edge Function
 // Incremental sync: fetches only estimates modified since yesterday 03:55 AM IST.
-// Runs daily at 04:15 AM IST via pg_cron (15 min after sync-items, staggered from other syncs).
+// Daily ~5:20 AM IST via pg_cron (scripts/deploy-cron.sql).
 // The 5-minute overlap on the cutoff time prevents records modified on the exact boundary
 // from being missed.
 //
