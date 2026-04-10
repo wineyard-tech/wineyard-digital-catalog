@@ -269,8 +269,8 @@ export default function EnquiryDetailPage({
         </div>
       </div>
 
-      {/* Estimate PDF link — only shown once estimate is sent (not while still in draft) */}
-      {data.estimate_url && data.status !== 'draft' && (
+      {/* Estimate PDF link — only shown if estimate_url is present */}
+      {data.estimate_url !== null && (
         <div style={{ margin: '12px 16px 0', textAlign: 'center' }}>
           <a
             href={data.estimate_url}
@@ -283,7 +283,7 @@ export default function EnquiryDetailPage({
             }}
           >
             <FileText size={15} />
-            Estimate PDF
+            Estimate PDF ↗
           </a>
         </div>
       )}
