@@ -23,7 +23,7 @@ const logger = makeLogger('[contacts-webhook]')
 // Fields watched for delta logging.
 // These are the fields most likely to change and most impactful operationally.
 // phone is included explicitly — a phone change is a critical event since it's
-// the unique key used to authenticate integrators.
+// part of the composite unique (phone, status) used for integrator rows.
 const WATCHED_FIELDS = [
   'status', 'contact_name', 'company_name',
   'pricebook_id', 'phone', 'email', 'contact_persons',
@@ -121,7 +121,7 @@ async function handleUpsert(
   if (!contact.contact_name) throw new Error('Missing contact_name in payload')
 
   // ── 1. Phone extraction — log source for debugging ─────────────────────────
-  // contacts.phone is UNIQUE and is the key used to look up integrators at login.
+  // contacts (phone, status) is UNIQUE; catalog login resolves by phone + status=active.
   // extractPhoneFromContact cascades through mobile → phone → billing_address →
   // contact_persons. We log which source the phone came from to aid debugging.
   const phoneResult = extractPhoneFromContact(contact)
@@ -179,7 +179,7 @@ async function handleUpsert(
   // This is the primary diagnostic for "contact update not reflecting" issues.
   // If DELTA shows changed=0 for an expected update, Zoho sent stale or identical
   // data. If DELTA shows changes but UPSERT_FAIL follows, there's a DB constraint
-  // issue (most likely a duplicate phone collision on another contact row).
+  // issue (most likely a duplicate phone+status collision on another contact row).
   const { data: existing } = await supabase
     .from('contacts')
     .select(WATCHED_FIELDS.join(','))
@@ -205,14 +205,14 @@ async function handleUpsert(
     .upsert(contactRow, { onConflict: 'zoho_contact_id' })
 
   if (contactErr) {
-    // The most common failure here is a duplicate phone on another contact row.
+    // The most common failure here is a duplicate (phone, status) on another contact row.
     // Log the phone to help identify which existing contact collides.
     logger.error('UPSERT_FAIL', {
       contact_id: contactId,
       event: eventType,
       phone,
       err: contactErr.message,
-      hint: 'check for duplicate phone on another contacts row',
+      hint: 'check for duplicate (phone, status) on another contacts row',
     })
     await logError(supabase, {
       event_type: eventType,

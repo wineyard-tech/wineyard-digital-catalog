@@ -5,6 +5,7 @@ import PostHogProvider from '../components/analytics/PostHogProvider'
 import { CartProvider } from '../components/cart/CartContext'
 import { PricingProvider } from '../contexts/PricingContext'
 import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 export const metadata: Metadata = {
   title: 'Wine Yard Catalog',
@@ -47,6 +48,7 @@ export default function RootLayout({
           </PostHogProvider>
         </AuthProvider>
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )

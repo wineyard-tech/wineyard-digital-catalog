@@ -637,7 +637,7 @@ async function syncAllContacts(
         .upsert(contactRows, { onConflict: 'zoho_contact_id' })
 
       if (error) {
-        // Fallback: row-by-row to isolate duplicate phone conflicts
+        // Fallback: row-by-row to isolate duplicate (phone, status) conflicts
         for (const row of contactRows) {
           const { error: rowErr } = await supabase
             .from('contacts')
@@ -1118,6 +1118,7 @@ async function syncAllInvoices(
         tds_amount:                 dec(inv.tds_amount) ?? 0,
         shipping_charge:            dec(inv.shipping_charge) ?? 0,
         estimate_number:            inv.estimate_number || null,
+        zoho_estimate_id:           inv.estimate_id || null,
         zoho_sync_status:           'SYNCED',
         source:                     'zoho',
         updated_at:                 new Date().toISOString(),

@@ -134,6 +134,7 @@ serve(async (req) => {
           tds_amount:                 dec(inv.tds_amount) ?? 0,
           shipping_charge:            dec(inv.shipping_charge) ?? 0,
           estimate_number:            inv.estimate_number || null,
+          zoho_estimate_id:           inv.estimate_id || null,
           zoho_sync_status:           'synced',
           // source is intentionally included so new rows get 'zoho'.
           // The DB preserve_source trigger silently ignores this on UPDATE,
