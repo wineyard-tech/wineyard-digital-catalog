@@ -531,7 +531,7 @@ export default function CartPage() {
               ? <span style={{ width: 16, height: 16, border: '2px solid #FFFFFF', borderTopColor: 'transparent', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.6s linear infinite' }} />
               : <MessageCircle size={16} color={getQuotePrimaryStyle ? '#FFFFFF' : '#9CA3AF'} />
             }
-            {loading ? 'Sending...' : 'Get Quote'}
+            {loading ? 'Sending...' : 'Get Whatsapp Quote'}
           </button>
           {/* PHASE2_SO_ARCHIVE_START
           <button

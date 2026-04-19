@@ -47,6 +47,7 @@ export async function resolveCatalogLoginByPhone(
     .from('contacts')
     .select(CONTACT_SELECT)
     .eq('phone', phone)
+    .eq('status', 'active')
     .maybeSingle()
 
   if (contactError) {
@@ -54,9 +55,6 @@ export async function resolveCatalogLoginByPhone(
   }
 
   if (contact) {
-    if (contact.status !== 'active') {
-      return { kind: 'inactive' }
-    }
     if (!contact.online_catalogue_access) {
       return { kind: 'no_catalog_access', reason: 'parent' }
     }
@@ -71,6 +69,18 @@ export async function resolveCatalogLoginByPhone(
       },
       person: null,
     }
+  }
+
+  const { data: nonActiveContact } = await supabase
+    .from('contacts')
+    .select('zoho_contact_id')
+    .eq('phone', phone)
+    .neq('status', 'active')
+    .limit(1)
+    .maybeSingle()
+
+  if (nonActiveContact) {
+    return { kind: 'inactive' }
   }
 
   const { data: byPhone } = await supabase

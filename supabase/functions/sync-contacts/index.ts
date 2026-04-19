@@ -150,7 +150,7 @@ serve(async (req) => {
           .upsert(contactRows, { onConflict: 'zoho_contact_id' })
 
         if (error) {
-          // Fallback: row-by-row to isolate duplicate phone conflicts
+          // Fallback: row-by-row to isolate duplicate (phone, status) conflicts
           for (const row of contactRows) {
             const { error: rowErr } = await supabase
               .from('contacts')

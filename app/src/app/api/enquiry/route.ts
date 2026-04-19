@@ -293,7 +293,7 @@ export async function POST(request: NextRequest) {
       const wlData = getActiveWlCookieRecord(wlParsed)
       if (wlData) {
         contactLocation =
-          (typeof wlData.name === 'string' ? wlData.name : undefined) ??
+          // (typeof wlData.name === 'string' ? wlData.name : undefined) ??   // use location area instead of name in Estimate Creation
           (typeof wlData.area === 'string' ? wlData.area : undefined) ??
           (typeof wlData.city === 'string' ? wlData.city : undefined) ??
           null
