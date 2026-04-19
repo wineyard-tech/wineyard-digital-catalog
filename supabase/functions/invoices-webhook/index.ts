@@ -24,6 +24,7 @@ const WATCHED_FIELDS = [
   'status', 'total', 'balance', 'subtotal', 'tax_total',
   'due_date', 'payment_terms_label',
   'zoho_contact_id', 'invoice_number', 'einvoice_status',
+  'estimate_number', 'zoho_estimate_id',
 ]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -84,6 +85,7 @@ interface ZohoInvoicePayload {
   tds_amount?: number | ''
   shipping_charge?: number | ''
   estimate_number?: string
+  estimate_id?: string
   created_time?: string
   last_modified_time?: string
 }
@@ -203,6 +205,7 @@ async function handleUpsert(
     tds_amount:                   dec(invoice.tds_amount) ?? 0,
     shipping_charge:              dec(invoice.shipping_charge) ?? 0,
     estimate_number:              invoice.estimate_number || null,
+    zoho_estimate_id:             invoice.estimate_id || null,
     zoho_sync_status:             'synced',
     updated_at:                   new Date().toISOString(),
   }
