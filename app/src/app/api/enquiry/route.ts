@@ -26,6 +26,26 @@ function buildCartHash(items: CartItem[]): string {
   return createHash('sha256').update(JSON.stringify(sorted)).digest('hex')
 }
 
+const UNKNOWN_WL_CONTACT_LOCATION = 'Unknown Location'
+
+/**
+ * `wl` cookie: finest meaningful geography first (sublocality / neighborhood),
+ * then city/county, then partial formatted address — never `name` (premise / route).
+ */
+function contactLocationFromWlRecord(wlData: Record<string, unknown>): string {
+  const segment = (v: unknown): string | undefined => {
+    if (typeof v !== 'string') return undefined
+    const t = v.trim()
+    return t.length > 0 ? t : undefined
+  }
+  return (
+    segment(wlData.area) ??
+    segment(wlData.city) ??
+    segment(wlData.address) ??
+    UNKNOWN_WL_CONTACT_LOCATION
+  )
+}
+
 type ServiceSupabase = ReturnType<typeof createServiceClient>
 
 interface WarehouseResolution {
@@ -285,18 +305,14 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  let contactLocation: string | null = null
+  let contactLocation = UNKNOWN_WL_CONTACT_LOCATION
   try {
     const wlRaw = request.cookies.get('wl')?.value
     if (wlRaw) {
       const wlParsed = JSON.parse(decodeURIComponent(wlRaw))
       const wlData = getActiveWlCookieRecord(wlParsed)
       if (wlData) {
-        contactLocation =
-          // (typeof wlData.name === 'string' ? wlData.name : undefined) ??   // use location area instead of name in Estimate Creation
-          (typeof wlData.area === 'string' ? wlData.area : undefined) ??
-          (typeof wlData.city === 'string' ? wlData.city : undefined) ??
-          null
+        contactLocation = contactLocationFromWlRecord(wlData)
       }
     }
   } catch {
