@@ -97,6 +97,10 @@ serve(async (req) => {
           cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'YES' || false
         const contact_catalog_access = contact_online_catalogue_access || false
 
+        const gstNoRaw = contact.gst_no
+        const gst_no =
+          typeof gstNoRaw === 'string' && gstNoRaw.trim() !== '' ? gstNoRaw.trim() : null
+
         contactRows.push({
           zoho_contact_id: contact.contact_id,
           contact_name: contact.contact_name,
@@ -116,6 +120,7 @@ serve(async (req) => {
           custom_fields: Array.isArray(contact.custom_fields) ? contact.custom_fields : [],
           online_catalogue_access: contact_online_catalogue_access,
           catalog_access: contact_catalog_access,
+          gst_no,
           created_time: contact.created_time || null,
           last_modified_time: contact.last_modified_time || null,
           updated_at: new Date().toISOString(),

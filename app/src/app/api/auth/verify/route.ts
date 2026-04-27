@@ -4,6 +4,7 @@ import { timingSafeEqual } from 'crypto'
 import { createServiceClient } from '@/lib/supabase/server'
 import { setSessionCookie } from '@/lib/auth'
 import { verifyOTP } from '@/lib/auth/otp'
+import { ensureContactGstNoFromZoho } from '@/lib/zoho'
 
 const MAX_ATTEMPTS = 3
 
@@ -131,5 +132,6 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ success: true }, { status: 200 })
   setSessionCookie(response, session.token)
+  ensureContactGstNoFromZoho(authReq.zoho_contact_id)
   return response
 }

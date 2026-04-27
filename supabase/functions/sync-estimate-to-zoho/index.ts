@@ -369,6 +369,17 @@ serve(async (req) => {
     return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
   }
 
+  const { data: contactForZoho } = await supabase
+    .from('contacts')
+    .select('gst_no')
+    .eq('zoho_contact_id', contactId)
+    .maybeSingle()
+
+  const contactGstNo =
+    typeof contactForZoho?.gst_no === 'string' && contactForZoho.gst_no.trim() !== ''
+      ? contactForZoho.gst_no.trim()
+      : null
+
   const now = new Date()
   const today = formatOrgDateYmd(now, orgTz)
   const expiry = formatOrgDateYmd(new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000), orgTz)
@@ -379,8 +390,9 @@ serve(async (req) => {
     customer_id: contactId,
     date: today,
     expiry_date: expiry,
-    is_inclusive_tax: false,
-    tax_treatment: 'out_of_scope',
+    is_inclusive_tax: true,
+    tax_treatment: 'vat_registered',
+    custom_fields: [{ api_name: 'cf_catalog_estimate', value: true }],
     location_id: est.location_id ?? null,
     line_items: lineItems.map((item) => {
       const name = String(item.item_name ?? 'Item')
@@ -395,6 +407,10 @@ serve(async (req) => {
       }
     }),
     notes: notesText,
+  }
+  if (contactGstNo) {
+    zohoBody.gst_treatment = 'business_gst'
+    zohoBody.gst_no = contactGstNo
   }
   if (est.location_id) zohoBody.location_id = est.location_id
 
@@ -428,7 +444,7 @@ serve(async (req) => {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     console.error('[sync-estimate-to-zoho] create:', msg)
-    await failRow(supabase, est, msg, orgId, waToken, waPhoneId)
+    await failRow(supabase, est, msg, waToken, waPhoneId)
     return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } })
   }
 
@@ -667,7 +683,7 @@ async function sendWhatsAppForOutcome(
             sub_type: 'url',
             index: '0',
             parameters: [ // use Estimate publicId instead of Zoho estimate_id since Zoho estimate could not be created
-              { type: 'text', text: ctx.public_id ?? '' }
+              { type: 'text', text: ctx.publicId ?? '' }
             ],
           },
         ],

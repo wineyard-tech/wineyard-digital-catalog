@@ -73,6 +73,7 @@ export interface ZohoContact {
   };
   shipping_address?: Record<string, unknown>;
   custom_fields?: Record<string, unknown>;
+  gst_no?: string;
   contact_persons?: ZohoContactPerson[];
   created_time?: string;
   last_modified_time?: string;
