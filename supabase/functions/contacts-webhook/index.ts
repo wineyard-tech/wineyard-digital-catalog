@@ -29,7 +29,7 @@ const WATCHED_FIELDS = [
   'pricebook_id', 'phone', 'email', 'contact_persons',
   'payment_terms', 'payment_terms_label',
   'currency_code', 'contact_type', 'custom_fields',
-  'online_catalogue_access', 'catalog_access',
+  'online_catalogue_access', 'catalog_access', 'gst_no',
 ]
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -65,6 +65,7 @@ interface ZohoContactPayload {
   payment_terms_label?: string
   currency_id?: string
   currency_code?: string
+  gst_no?: string
   custom_fields?: Array<{ api_name?: string; value?: unknown; [key: string]: unknown }>
   contact_persons?: ZohoContactPerson[]
   created_time?: string
@@ -151,6 +152,9 @@ async function handleUpsert(
     cfCatalogEntry?.value === true || cfCatalogEntry?.value === 'YES' || false
   const catalog_access = online_catalogue_access || false
 
+  const gstNoRaw = contact.gst_no
+  const gst_no = typeof gstNoRaw === 'string' && gstNoRaw.trim() !== '' ? gstNoRaw.trim() : null
+
   const contactRow = {
     zoho_contact_id:           contactId,
     contact_name:              contact.contact_name,
@@ -170,6 +174,7 @@ async function handleUpsert(
     custom_fields:             contact.custom_fields ?? [],
     online_catalogue_access,
     catalog_access,
+    gst_no,
     created_time:              contact.created_time || null,
     last_modified_time:        contact.last_modified_time || null,
     updated_at:                new Date().toISOString(),

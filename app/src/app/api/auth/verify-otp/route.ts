@@ -8,6 +8,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { isValidIndianPhone, normalisePhone, verifyOTP } from '@/lib/auth/otp'
 import { setSessionCookie } from '@/lib/auth'
 import { resolveCatalogLoginByPhone } from '@/lib/auth/resolve-catalog-login'
+import { ensureContactGstNoFromZoho } from '@/lib/zoho'
 
 const MAX_ATTEMPTS = Number(process.env.MAX_OTP_ATTEMPTS ?? 3)
 const SESSION_DAYS = 15
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
     )
 
     setSessionCookie(response, session.token)
+    ensureContactGstNoFromZoho(login.parent.zoho_contact_id)
     return response
   }
 

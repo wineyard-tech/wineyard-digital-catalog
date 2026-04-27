@@ -202,6 +202,77 @@ export async function getContactByPhone(phone: string): Promise<ZohoContact | nu
 }
 
 /**
+ * GET /contacts/{id} — returns trimmed gst_no from Zoho or null.
+ */
+export async function fetchZohoContactGstNo(zohoContactId: string): Promise<string | null> {
+  const meta = { zoho_contact_id: zohoContactId }
+  try {
+    const token = await getAccessToken()
+    const orgId = process.env.ZOHO_ORG_ID!
+    const res = await fetch(
+      `${ZOHO_API_BASE}/contacts/${zohoContactId}?organization_id=${orgId}`,
+      { headers: { Authorization: `Zoho-oauthtoken ${token}` } }
+    )
+    if (!res.ok) {
+      const errText = await res.text()
+      logZohoError(`GET contacts/${zohoContactId}`, res.status, errText, meta)
+      return null
+    }
+    const data = (await res.json()) as { contact?: { gst_no?: string } }
+    const raw = data.contact?.gst_no
+    if (typeof raw !== 'string' || raw.trim() === '') return null
+    return raw.trim()
+  } catch (err) {
+    console.error(
+      '[zoho]',
+      formatZohoError(
+        `GET contacts/${zohoContactId} (gst_no)`,
+        0,
+        err instanceof Error ? err.message : String(err),
+        meta
+      ),
+      err
+    )
+    return null
+  }
+}
+
+/**
+ * If contacts.gst_no is still null, loads GST from Zoho Books and updates the row.
+ * Fire-and-forget from auth routes — do not await.
+ */
+export function ensureContactGstNoFromZoho(zohoContactId: string): void {
+  void (async () => {
+    try {
+      const supabase = createServiceClient()
+      const { data: row } = await supabase
+        .from('contacts')
+        .select('gst_no')
+        .eq('zoho_contact_id', zohoContactId)
+        .maybeSingle()
+
+      const existing = row?.gst_no
+      if (typeof existing === 'string' && existing.trim() !== '') return
+
+      const gst_no = await fetchZohoContactGstNo(zohoContactId)
+      if (!gst_no) return
+
+      const { error } = await supabase
+        .from('contacts')
+        .update({ gst_no, updated_at: new Date().toISOString() })
+        .eq('zoho_contact_id', zohoContactId)
+        .is('gst_no', null)
+
+      if (error) {
+        console.error('[zoho] ensureContactGstNoFromZoho update failed', zohoContactId, error.message)
+      }
+    } catch (e) {
+      console.error('[zoho] ensureContactGstNoFromZoho', zohoContactId, e)
+    }
+  })()
+}
+
+/**
  * Fetches line_items for a Zoho invoice from the detail endpoint.
  * Used to lazily hydrate invoice rows that were synced from the list endpoint
  * (which does not include line_items). Returns null on any failure.

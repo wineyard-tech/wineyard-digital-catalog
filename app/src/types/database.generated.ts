@@ -236,6 +236,7 @@ export type Database = {
           currency_id: string | null
           custom_fields: Json | null
           email: string | null
+          gst_no: string | null
           last_modified_time: string | null
           payment_terms: number | null
           payment_terms_label: string | null
@@ -260,6 +261,7 @@ export type Database = {
           currency_id?: string | null
           custom_fields?: Json | null
           email?: string | null
+          gst_no?: string | null
           last_modified_time?: string | null
           payment_terms?: number | null
           payment_terms_label?: string | null
@@ -284,6 +286,7 @@ export type Database = {
           currency_id?: string | null
           custom_fields?: Json | null
           email?: string | null
+          gst_no?: string | null
           last_modified_time?: string | null
           payment_terms?: number | null
           payment_terms_label?: string | null
