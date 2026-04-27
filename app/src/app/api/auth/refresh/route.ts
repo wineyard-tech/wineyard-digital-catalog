@@ -8,6 +8,7 @@ import type { NextRequest } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { requireSession, setSessionCookie } from '@/lib/auth'
 import { AuthError } from '@/lib/auth'
+import { ensureContactGstNoFromZoho } from '@/lib/zoho'
 
 const SESSION_DAYS = 15
 
@@ -39,9 +40,13 @@ export async function POST(request: NextRequest) {
 
   const { data: contact } = await supabase
     .from('contacts')
-    .select('contact_name, company_name, pricebook_id')
+    .select('contact_name, company_name, pricebook_id, gst_no')
     .eq('zoho_contact_id', session.zoho_contact_id)
     .maybeSingle()
+
+  if (contact && (contact.gst_no == null || String(contact.gst_no).trim() === '')) {
+    ensureContactGstNoFromZoho(session.zoho_contact_id)
+  }
 
   let contact_person_name: string | null = session.contact_person_name
   if (session.zoho_contact_person_id) {

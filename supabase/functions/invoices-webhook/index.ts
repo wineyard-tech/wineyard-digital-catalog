@@ -15,8 +15,11 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { makeLogger, computeDelta, logEvent } from '../_shared/logger.ts'
 import { timingSafeEqualString } from '../_shared/webhook-auth.ts'
+import { getZohoToken } from '../_shared/zoho-client.ts'
 
 const logger = makeLogger('[invoices-webhook]')
+
+const ZOHO_API_BASE = 'https://www.zohoapis.in/books/v3'
 
 // Fields watched for delta logging — balance and status are the most critical
 // signals for an invoice (tracks payment progress).
@@ -132,6 +135,105 @@ async function logError(
 }
 
 // ── Upsert handler (Create + Update) ─────────────────────────────────────────
+
+/**
+ * When an invoice is linked to an estimate, if that estimate is catalog-app and the
+ * contact has online catalogue access, set cf_catalog_invoice on the Zoho invoice (one PUT).
+ */
+async function stampCatalogInvoiceIfEligible(
+  supabase: SupabaseClient,
+  invoice: ZohoInvoicePayload
+): Promise<void> {
+  const estimateId = (invoice.estimate_id ?? '').toString().trim()
+  const invoiceId = invoice.invoice_id
+  if (!estimateId || !invoiceId) return
+
+  const { data: est } = await supabase
+    .from('estimates')
+    .select('source, zoho_contact_id')
+    .eq('zoho_estimate_id', estimateId)
+    .maybeSingle()
+
+  if (!est) {
+    logger.info('CATALOG_INV', { invoice_id: invoiceId, note: 'estimate not in supabase', estimate_id: estimateId })
+    return
+  }
+
+  if (est.source !== 'catalog-app') return
+
+  const estContactId = est.zoho_contact_id as string | null
+  if (!estContactId) return
+
+  if (invoice.customer_id && invoice.customer_id !== estContactId) {
+    logger.warn('CATALOG_INV', {
+      invoice_id: invoiceId,
+      note: 'customer_id does not match estimate zoho_contact_id',
+      customer_id: invoice.customer_id,
+      estimate_contact: estContactId,
+    })
+  }
+
+  const { data: contact } = await supabase
+    .from('contacts')
+    .select('online_catalogue_access')
+    .eq('zoho_contact_id', estContactId)
+    .maybeSingle()
+
+  if (!contact?.online_catalogue_access) return
+
+  const orgId = Deno.env.get('ZOHO_ORG_ID')?.trim() ?? ''
+  if (!orgId) {
+    logger.error('CATALOG_INV', { reason: 'ZOHO_ORG_ID not set', invoice_id: invoiceId })
+    return
+  }
+
+  let token: string
+  try {
+    token = await getZohoToken(supabase)
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    logger.error('CATALOG_INV', { reason: 'token', invoice_id: invoiceId, err: msg })
+    await logError(supabase, {
+      event_type: 'catalog_invoice_stamp',
+      zoho_entity_id: invoiceId,
+      error_message: `getZohoToken: ${msg}`,
+      payload: { estimate_id: estimateId },
+    })
+    return
+  }
+
+  const res = await fetch(
+    `${ZOHO_API_BASE}/invoices/${encodeURIComponent(invoiceId)}?organization_id=${encodeURIComponent(orgId)}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Zoho-oauthtoken ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        custom_fields: [{ api_name: 'cf_catalog_invoice', value: true }],
+      }),
+    }
+  )
+
+  if (!res.ok) {
+    const body = await res.text()
+    logger.error('CATALOG_INV', {
+      invoice_id: invoiceId,
+      http: res.status,
+      body: body.slice(0, 2000),
+    })
+    await logError(supabase, {
+      event_type: 'catalog_invoice_stamp',
+      zoho_entity_id: invoiceId,
+      error_message: `PUT cf_catalog_invoice: ${res.status} ${body.slice(0, 500)}`,
+      payload: { estimate_id: estimateId },
+    })
+    return
+  }
+
+  logger.info('CATALOG_INV', { invoice_id: invoiceId, estimate_id: estimateId, note: 'cf_catalog_invoice set' })
+}
 
 async function handleUpsert(
   supabase: SupabaseClient,
@@ -330,6 +432,11 @@ serve(async (req: Request) => {
 
   try {
     const result = await handleUpsert(supabase, invoice, eventType, rawPayload)
+    try {
+      await stampCatalogInvoiceIfEligible(supabase, invoice)
+    } catch (stampErr) {
+      logger.error('CATALOG_INV', { invoice_id: invoice.invoice_id, err: String(stampErr) })
+    }
     await logEvent({
       supabase,
       webhook_type:   'invoices',
