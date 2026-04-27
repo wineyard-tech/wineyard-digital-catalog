@@ -391,7 +391,7 @@ serve(async (req) => {
     date: today,
     expiry_date: expiry,
     is_inclusive_tax: true,
-    tax_treatment: 'vat_registered',
+    // tax_treatment: 'vat_registered',
     custom_fields: [{ api_name: 'cf_catalog_estimate', value: true }],
     location_id: est.location_id ?? null,
     line_items: lineItems.map((item) => {
