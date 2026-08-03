@@ -1,20 +1,18 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
-import { AuthProvider } from '../contexts/AuthContext'
-import PostHogProvider from '../components/analytics/PostHogProvider'
-import { CartProvider } from '../components/cart/CartContext'
-import { PricingProvider } from '../contexts/PricingContext'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
-  title: 'Wine Yard Catalog',
-  description: 'Wine Yard CCTV product catalog for integrators',
+  title: 'Moving to Yukti',
+  description: 'Wine Yard Catalog has transitioned to Yukti. You will be redirected shortly.',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Wine Yard',
+    title: 'Yukti',
   },
 }
 
@@ -38,15 +36,7 @@ export default function RootLayout({
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>
-        <AuthProvider>
-          <PostHogProvider>
-            <PricingProvider>
-              <CartProvider>
-                {children}
-              </CartProvider>
-            </PricingProvider>
-          </PostHogProvider>
-        </AuthProvider>
+        {children}
         <Analytics />
         <SpeedInsights />
       </body>
